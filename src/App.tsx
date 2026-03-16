@@ -6,6 +6,7 @@ import {
   FileText, Edit3, Layers, Settings2, Command, Github, ExternalLink,
   MessageCircle, X, Check, Send
 } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { clsx, type ClassValue } from 'clsx';
@@ -952,7 +953,12 @@ export default function App() {
 
   // --- Render ---
   if (isDisplayMode) {
-    return <TimerDisplay config={config} timeLeft={timeLeft} activeItem={activeItem} systemClock={systemClock} isActive={isActive} targetTime={targetTime} />;
+    return (
+      <>
+        <TimerDisplay config={config} timeLeft={timeLeft} activeItem={activeItem} systemClock={systemClock} isActive={isActive} targetTime={targetTime} />
+        <Analytics />
+      </>
+    );
   }
 
   const currentTheme = THEMES[config.theme];
@@ -1964,6 +1970,7 @@ export default function App() {
 
       {/* Bottom safe area + separator (keeps UI off the taskbar edge) */}
       <div className="shrink-0 h-4 border-t-2 border-emerald-500/70 bg-transparent" />
+      <Analytics />
     </div>
   );
 }
