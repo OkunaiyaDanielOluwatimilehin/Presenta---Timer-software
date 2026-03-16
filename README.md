@@ -19,7 +19,7 @@ Source code: https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-so
 Download (Windows)
 
 Download and install the latest `.msi` from the GitHub Releases page:
-https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-software
+https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-software/releases/tag/Software
 
 ---
 
