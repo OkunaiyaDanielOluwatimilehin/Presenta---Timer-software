@@ -35,6 +35,18 @@ type ThemeMode = 'dark' | 'light' | 'matrix' | 'cyberpunk' | 'minimal';
 type FontStyle = 'font-sans' | 'font-display' | 'font-digital' | 'font-mono' | 'font-classic' | 'font-impact' | 'font-retro' | 'font-heavy' | 'font-clean' | 'font-elegant';
 type TimerSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
+type OutputTarget = {
+  index: number;
+  name: string;
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+  isPrimary?: boolean;
+  scaleFactor?: number;
+  kind: 'tauri' | 'web';
+};
+
 interface TimerConfig {
   theme: ThemeMode;
   fontFamily: FontStyle;
@@ -198,6 +210,14 @@ const TimerDisplay = ({
   const timerOuterRef = useRef<HTMLDivElement | null>(null);
   const timerInnerRef = useRef<HTMLDivElement | null>(null);
   const [timerScale, setTimerScale] = useState(1);
+  const isTauri = Boolean((window as any).__TAURI__);
+  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
+
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
 
   useEffect(() => {
     if (isPreview) {
@@ -230,6 +250,26 @@ const TimerDisplay = ({
       isPreview ? "bg-transparent" : currentTheme.bg,
       !isPreview && hasBroadcast && "pb-[9vh]"
     )}>
+      {/* Web display: encourage fullscreen to hide browser chrome */}
+      {!isPreview && !isTauri && !isFullscreen && (
+        <div className="absolute top-4 right-4 z-[110]">
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                document.documentElement.requestFullscreen?.();
+              } catch {
+                // ignore
+              }
+            }}
+            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-black hover:opacity-90"
+            title="Enter Fullscreen (hides browser UI)"
+          >
+            Fullscreen
+          </button>
+        </div>
+      )}
+
       {/* Status + System Clock (Display Only, ABOVE timer) */}
       {!isPreview && (
         <div className={cn("w-full flex flex-col items-center text-center", showStatus ? "mb-14" : "mb-10")}>
@@ -405,6 +445,10 @@ export default function App() {
   const [newAgendaMinutesText, setNewAgendaMinutesText] = useState('5');
   const [newAgendaColor, setNewAgendaColor] = useState('#10b981');
   const [newAgendaDescription, setNewAgendaDescription] = useState('');
+  const [outputs, setOutputs] = useState<OutputTarget[]>([]);
+  const [selectedOutputIndex, setSelectedOutputIndex] = useState<number | null>(null);
+  const [isDisplayOpen, setIsDisplayOpen] = useState(false);
+  const [showDisplayHelp, setShowDisplayHelp] = useState(false);
   
   const [agenda, setAgenda] = useState<AgendaItem[]>(() => {
     const saved = localStorage.getItem('presenta-agenda-v6');
@@ -453,23 +497,30 @@ export default function App() {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`
   );
-
+  const isTauri = Boolean((window as any).__TAURI__);
+ 
   // --- Display Window Management ---
-  const handleOpenDisplay = async () => {
+  const handleOpenDisplay = async (outputIndex?: number | null) => {
     // Prefer native Tauri window creation when running as a desktop app.
     // (window.open in Tauri typically opens the system browser instead of a new app window.)
-    try {
-      const tauriGlobal = (window as any).__TAURI__;
-      const invoke =
-        tauriGlobal?.core?.invoke ??
-        tauriGlobal?.invoke;
+    if (isTauri) {
+      try {
+        const tauriGlobal = (window as any).__TAURI__;
+        const invoke =
+          tauriGlobal?.core?.invoke ??
+          tauriGlobal?.invoke;
 
-      if (typeof invoke === 'function') {
-        await invoke('open_display_window');
-        return;
+        if (typeof invoke === 'function') {
+          await invoke('open_display_window', outputIndex != null ? { outputIndex } : undefined);
+          setIsDisplayOpen(true);
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to open Tauri display window.', err);
       }
-    } catch (err) {
-      console.warn('Failed to open Tauri display window; falling back to window.open.', err);
+
+      setShowDisplayHelp(true);
+      return;
     }
 
     const url = new URL(window.location.href);
@@ -482,18 +533,125 @@ export default function App() {
         // @ts-ignore
         const screenDetails = await window.getScreenDetails();
         // @ts-ignore
-        const externalScreen = screenDetails.screens.find((s: any) => !s.isPrimary && !s.isInternal);
+        const target = (typeof outputIndex === 'number')
+          ? screenDetails.screens[outputIndex]
+          : screenDetails.screens.find((s: any) => !s.isPrimary && !s.isInternal);
         
-        if (externalScreen) {
-          windowFeatures = `left=${externalScreen.availLeft},top=${externalScreen.availTop},width=${externalScreen.availWidth},height=${externalScreen.availHeight},menubar=no,toolbar=no,location=no,status=no,fullscreen=yes`;
+        if (target) {
+          windowFeatures = `left=${target.availLeft},top=${target.availTop},width=${target.availWidth},height=${target.availHeight},menubar=no,toolbar=no,location=no,status=no,fullscreen=yes`;
         }
       }
     } catch (err) {
       console.warn('Window Management API not supported or permission denied.');
     }
 
-    window.open(url.toString(), 'PresentaProDisplay', windowFeatures);
+    const w = window.open(url.toString(), 'PresentaProDisplay', windowFeatures);
+    if (!w) {
+      setShowDisplayHelp(true);
+      return;
+    }
+    setIsDisplayOpen(true);
   };
+
+  const handleCloseDisplay = async () => {
+    if (isTauri) {
+      try {
+        const tauriGlobal = (window as any).__TAURI__;
+        const invoke =
+          tauriGlobal?.core?.invoke ??
+          tauriGlobal?.invoke;
+        if (typeof invoke === 'function') {
+          await invoke('close_display_window');
+          setIsDisplayOpen(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to close Tauri display window.', err);
+      }
+    }
+
+    try {
+      // Best-effort for web: reuse window name and close if we can access it.
+      const display = window.open('', 'PresentaProDisplay');
+      display?.close();
+    } catch {
+      // ignore
+    }
+    setIsDisplayOpen(false);
+  };
+
+  const refreshOutputs = useCallback(async () => {
+    if (isTauri) {
+      try {
+        const tauriGlobal = (window as any).__TAURI__;
+        const invoke =
+          tauriGlobal?.core?.invoke ??
+          tauriGlobal?.invoke;
+        if (typeof invoke === 'function') {
+          const raw = await invoke('list_outputs');
+          const list = (Array.isArray(raw) ? raw : []).map((m: any) => ({
+            index: Number(m.index),
+            name: String(m.name ?? `Display ${Number(m.index) + 1}`),
+            width: Number(m.width),
+            height: Number(m.height),
+            x: Number(m.x),
+            y: Number(m.y),
+            isPrimary: Boolean(m.is_primary ?? m.isPrimary),
+            scaleFactor: Number(m.scale_factor ?? m.scaleFactor),
+            kind: 'tauri' as const,
+          }));
+          setOutputs(list);
+          if (selectedOutputIndex == null) {
+            const primary = list.find((o) => o.isPrimary);
+            setSelectedOutputIndex(primary?.index ?? list[0]?.index ?? null);
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to list outputs (Tauri).', err);
+      }
+      setOutputs([]);
+      return;
+    }
+
+    // Web fallback (best-effort)
+    try {
+      if ('getScreenDetails' in window) {
+        // @ts-ignore
+        const screenDetails = await window.getScreenDetails();
+        const list = (screenDetails?.screens ?? []).map((s: any, index: number) => ({
+          index,
+          name: `Screen ${index + 1}`,
+          width: Number(s.width ?? s.availWidth ?? 0),
+          height: Number(s.height ?? s.availHeight ?? 0),
+          x: Number(s.availLeft ?? 0),
+          y: Number(s.availTop ?? 0),
+          isPrimary: Boolean(s.isPrimary),
+          kind: 'web' as const,
+        }));
+        setOutputs(list);
+        if (selectedOutputIndex == null) {
+          const primary = list.find((o) => o.isPrimary);
+          setSelectedOutputIndex(primary?.index ?? list[0]?.index ?? null);
+        }
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to list outputs (Web).', err);
+    }
+
+    setOutputs([
+      {
+        index: 0,
+        name: 'Screen 1',
+        width: window.screen?.width ?? 0,
+        height: window.screen?.height ?? 0,
+        isPrimary: true,
+        kind: 'web' as const,
+      },
+    ]);
+    if (selectedOutputIndex == null) setSelectedOutputIndex(0);
+  }, [isTauri, selectedOutputIndex]);
 
   // --- Effects ---
   useEffect(() => {
@@ -502,6 +660,15 @@ export default function App() {
       setIsDisplayMode(true);
     }
   }, []);
+
+  useEffect(() => {
+    document.title = isDisplayMode ? 'Presenta Pro - Display' : 'Presenta Pro';
+  }, [isDisplayMode]);
+
+  useEffect(() => {
+    if (isDisplayMode) return;
+    refreshOutputs();
+  }, [isDisplayMode, refreshOutputs]);
 
   // Multi-Window Sync
   useEffect(() => {
@@ -992,11 +1159,86 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Display Help Modal */}
+      <AnimatePresence>
+        {showDisplayHelp && (
+          <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDisplayHelp(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className={cn("relative w-full max-w-xl rounded-3xl p-8 border shadow-2xl overflow-hidden", currentTheme.bg, currentTheme.border)}
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
+              <button
+                onClick={() => setShowDisplayHelp(false)}
+                className={cn("absolute top-4 right-4 p-2 rounded-full transition-colors", currentTheme.subtleBg, "hover:bg-red-500/20 hover:text-red-500")}
+              >
+                <X size={20} />
+              </button>
+
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-500">
+                  <MonitorPlay size={24} />
+                </div>
+                <div>
+                  <h3 className={cn("text-xl font-black tracking-tight", currentTheme.text)}>Display Troubleshooting</h3>
+                  <p className={cn("text-xs font-medium", currentTheme.muted)}>
+                    If you previously blocked access, you can unblock it here.
+                  </p>
+                </div>
+              </div>
+
+              <div className={cn("space-y-4 text-sm leading-relaxed", currentTheme.text)}>
+                <div className={cn("p-4 rounded-2xl border", currentTheme.subtleBg, currentTheme.border)}>
+                  <div className="text-[11px] font-black uppercase tracking-widest mb-2">Desktop App (Tauri)</div>
+                  <div className={cn("text-[12px] font-bold", currentTheme.muted)}>
+                    Use <span className={currentTheme.text}>Settings → Outputs</span> to pick a screen and click <span className={currentTheme.text}>Turn On</span>.
+                    If it opened in your browser before, that was a fallback — this modal prevents that now.
+                  </div>
+                </div>
+
+                <div className={cn("p-4 rounded-2xl border", currentTheme.subtleBg, currentTheme.border)}>
+                  <div className="text-[11px] font-black uppercase tracking-widest mb-2">Web Browser</div>
+                  <ul className={cn("list-disc pl-5 space-y-1 text-[12px] font-bold", currentTheme.muted)}>
+                    <li>Allow <span className={currentTheme.text}>Pop-ups</span> for this site (your display window is a pop-up).</li>
+                    <li>In Edge/Chrome: click the lock icon → <span className={currentTheme.text}>Site permissions</span> → reset/allow permissions for this site.</li>
+                    <li>If available, allow <span className={currentTheme.text}>Window management / Screen placement</span>, then refresh the page.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowDisplayHelp(false)}
+                  className={cn("px-5 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Top Navigation */}
       <nav className={cn("h-14 border-b flex items-center px-6 gap-8 backdrop-blur-md z-50", currentTheme.navBg, currentTheme.border)}>
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <Activity size={20} className="text-black" />
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20 shadow-lg shadow-emerald-500/15">
+            <img
+              src="/android-chrome-192x192.png"
+              alt="Presenta Pro"
+              className="w-5 h-5 logo-emerald logo-float"
+              draggable={false}
+            />
           </div>
           <span className={cn("font-display font-black tracking-tighter text-xl", currentTheme.text)}>
             PRES<span className="text-emerald-500">NTA</span>
@@ -1525,7 +1767,7 @@ export default function App() {
                   <Monitor size={14} className="text-blue-500" />
                   <span className={cn("text-[11px] font-black uppercase tracking-widest", currentTheme.muted)}>Preview Monitor</span>
                 </div>
-                <button onClick={handleOpenDisplay} className={cn("p-1.5 rounded-md text-emerald-500", currentTheme.subtleBg, "hover:opacity-80")}><Maximize2 size={14} /></button>
+                <button onClick={() => handleOpenDisplay(selectedOutputIndex)} className={cn("p-1.5 rounded-md text-emerald-500", currentTheme.subtleBg, "hover:opacity-80")}><Maximize2 size={14} /></button>
               </div>
               <div className={cn("aspect-video bg-black rounded-xl border overflow-hidden relative shadow-2xl", currentTheme.border)}>
                 {showPreview ? <TimerDisplay config={config} timeLeft={timeLeft} activeItem={activeItem} systemClock={systemClock} isActive={isActive} targetTime={targetTime} isPreview /> : (
@@ -1581,6 +1823,104 @@ export default function App() {
                       {f.replace('font-', '')}
                     </button>
                   ))}
+                </div>
+              </section>
+
+              {/* Outputs */}
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <MonitorPlay size={14} className="text-emerald-500" />
+                    <h3 className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.text)}>Outputs</h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => refreshOutputs()}
+                      className={cn("p-2 rounded-lg border transition-colors", currentTheme.subtleBg, currentTheme.border, "hover:opacity-80")}
+                      title="Refresh outputs"
+                      type="button"
+                    >
+                      <RefreshCw size={14} />
+                    </button>
+                    <button
+                      onClick={() => setShowDisplayHelp(true)}
+                      className={cn("p-2 rounded-lg border transition-colors", currentTheme.subtleBg, currentTheme.border, "hover:opacity-80")}
+                      title="Help"
+                      type="button"
+                    >
+                      <MessageCircle size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className={cn("p-4 rounded-2xl border space-y-3", currentTheme.subtleBg, currentTheme.border)}>
+                  {outputs.length === 0 ? (
+                    <div className={cn("text-[11px] font-bold", currentTheme.muted)}>
+                      No outputs detected yet. Click refresh or open the display once.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {outputs.map((o) => (
+                        <button
+                          key={`${o.kind}-${o.index}`}
+                          type="button"
+                          onClick={() => setSelectedOutputIndex(o.index)}
+                          className={cn(
+                            "w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition-colors",
+                            currentTheme.border,
+                            selectedOutputIndex === o.index ? "bg-emerald-500/15 border-emerald-500/40" : "hover:bg-white/5"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "w-4 h-4 rounded-full border flex items-center justify-center",
+                              selectedOutputIndex === o.index ? "border-emerald-500" : currentTheme.border
+                            )}>
+                              {selectedOutputIndex === o.index && <div className="w-2 h-2 rounded-full bg-emerald-500" />}
+                            </div>
+                            <div>
+                              <div className={cn("text-[12px] font-black", currentTheme.text)}>{o.name}</div>
+                              <div className={cn("text-[10px] font-bold", currentTheme.muted)}>
+                                {o.width}×{o.height}{o.isPrimary ? ' • Primary' : ''}
+                              </div>
+                            </div>
+                          </div>
+                          <div className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.muted)}>
+                            {o.kind === 'tauri' ? 'Desktop' : 'Web'}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-3 pt-1">
+                    <div className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.muted)}>
+                      Output: {selectedOutputIndex == null ? 'Auto' : `#${selectedOutputIndex + 1}`}
+                    </div>
+                    {isDisplayOpen ? (
+                      <button
+                        onClick={handleCloseDisplay}
+                        type="button"
+                        className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                      >
+                        Turn Off
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenDisplay(selectedOutputIndex)}
+                        type="button"
+                        className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-black hover:opacity-90"
+                      >
+                        Turn On
+                      </button>
+                    )}
+                  </div>
+
+                  {!isTauri && (
+                    <div className={cn("text-[10px] font-bold leading-relaxed", currentTheme.muted)}>
+                      Web note: your browser may block pop-ups or screen placement. If the display doesn’t open, click Help.
+                    </div>
+                  )}
                 </div>
               </section>
 

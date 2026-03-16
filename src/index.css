@@ -117,4 +117,20 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /* Logo */
+  .logo-emerald {
+    /* Turns a black favicon into emerald-ish */
+    filter: invert(63%) sepia(44%) saturate(737%) hue-rotate(98deg) brightness(96%) contrast(95%);
+  }
+
+  .logo-float {
+    animation: logo-float 2.6s ease-in-out infinite;
+    transform-origin: 50% 50%;
+  }
+
+  @keyframes logo-float {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-1.5px) rotate(-6deg); }
+  }
 }
