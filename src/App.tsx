@@ -511,7 +511,7 @@ export default function App() {
           tauriGlobal?.invoke;
 
         if (typeof invoke === 'function') {
-          await invoke('open_display_window', outputIndex != null ? { outputIndex } : undefined);
+          await invoke('open_display_window', outputIndex != null ? { output_index: outputIndex } : undefined);
           setIsDisplayOpen(true);
           return;
         }
@@ -958,7 +958,7 @@ export default function App() {
   const currentTheme = THEMES[config.theme];
 
   return (
-    <div className={cn("min-h-screen flex flex-col font-sans", currentTheme.bg, currentTheme.text, `theme-${config.theme}`)}>
+    <div className={cn("relative h-screen flex flex-col font-sans overflow-hidden", currentTheme.bg, currentTheme.text, `theme-${config.theme}`)}>
       {/* Add Agenda Item Modal */}
       <AnimatePresence>
         {showAddAgendaModal && (
@@ -1230,17 +1230,17 @@ export default function App() {
       </AnimatePresence>
 
       {/* Top Navigation */}
-      <nav className={cn("h-14 border-b flex items-center px-6 gap-8 backdrop-blur-md z-50", currentTheme.navBg, currentTheme.border)}>
+      <nav className={cn("h-12 border-b flex items-center px-4 gap-6 backdrop-blur-md z-50", currentTheme.navBg, currentTheme.border)}>
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20 shadow-lg shadow-emerald-500/15">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20 shadow-lg shadow-emerald-500/15">
             <img
               src="/android-chrome-192x192.png"
               alt="Presenta Pro"
-              className="w-5 h-5 logo-emerald logo-float"
+              className="w-4.5 h-4.5 logo-emerald logo-float"
               draggable={false}
             />
           </div>
-          <span className={cn("font-display font-black tracking-tighter text-xl", currentTheme.text)}>
+          <span className={cn("font-display font-black tracking-tighter text-lg", currentTheme.text)}>
             PRES<span className="text-emerald-500">NTA</span>
           </span>
         </div>
@@ -1413,28 +1413,28 @@ export default function App() {
       </nav>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        <PanelGroup direction="horizontal">
+      <div className="flex-1 min-h-0 flex overflow-hidden pb-2">
+        <PanelGroup direction="horizontal" className="min-h-0">
           {/* Sidebar: Agenda & Broadcast */}
-          <Panel defaultSize={20} minSize={15} className={cn("flex flex-col", currentTheme.panelBg)}>
-            <PanelGroup direction="vertical">
+          <Panel defaultSize={20} minSize={15} className={cn("min-h-0 flex flex-col", currentTheme.panelBg)}>
+            <PanelGroup direction="vertical" className="min-h-0">
               {/* Agenda Section */}
-              <Panel defaultSize={60} minSize={30} className="flex flex-col">
-                <div className={cn("p-4 border-b flex items-center justify-between", currentTheme.border, currentTheme.subtleBg)}>
+              <Panel defaultSize={60} minSize={30} className="min-h-0 flex flex-col">
+                <div className={cn("p-3 border-b flex items-center justify-between", currentTheme.border, currentTheme.subtleBg)}>
                   <div className="flex items-center gap-2">
-                    <Layout size={18} className="text-emerald-500" />
-                    <h2 className={cn("text-[14px] font-black uppercase tracking-[0.2em]", currentTheme.text)}>Agenda</h2>
+                    <Layout size={16} className="text-emerald-500" />
+                    <h2 className={cn("text-[12px] font-black uppercase tracking-[0.22em]", currentTheme.text)}>Agenda</h2>
                   </div>
                   <button onClick={addAgendaItem} className={cn("p-1.5 rounded-md transition-colors", currentTheme.subtleBg, "hover:opacity-80", currentTheme.text)}><Plus size={16} /></button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
+                <div className="flex-1 overflow-y-auto p-3 pb-6 space-y-2 scrollbar-thin">
                   {agenda.map((item, idx) => (
                     <motion.div
                       key={item.id}
                       layout
                       className={cn(
-                        "p-4 rounded-xl border transition-all cursor-pointer group",
+                        "p-2.5 rounded-xl border transition-all cursor-pointer group",
                         activeItem?.id === item.id ? "bg-emerald-500/10 border-emerald-500/50" : 
                         selectedIndex === idx ? cn(currentTheme.subtleBg, currentTheme.border) : cn(currentTheme.subtleBg, "border-transparent hover:border-emerald-500/30")
                       )}
@@ -1443,14 +1443,14 @@ export default function App() {
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex-1">
                           <input 
-                            className={cn("bg-transparent border-none p-0 text-sm font-black focus:ring-0 w-full", currentTheme.text)}
+                            className={cn("bg-transparent border-none p-0 text-[13px] font-black focus:ring-0 w-full", currentTheme.text)}
                             value={item.label}
                             onChange={(e) => setAgenda(agenda.map(a => a.id === item.id ? { ...a, label: e.target.value } : a))}
                           />
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); removeAgendaItem(item.id); }} className="opacity-0 group-hover:opacity-100 p-1 text-red-500/50 hover:text-red-500 transition-all"><Trash2 size={14} /></button>
                       </div>
-                      <div className="flex items-center justify-between mt-4">
+                      <div className="flex items-center justify-between mt-3">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
                           <span className={cn("text-xs font-black font-mono", currentTheme.muted)}>{formatDuration(item.duration * 1000)}</span>
@@ -1483,7 +1483,7 @@ export default function App() {
               />
 
               {/* Broadcast Section */}
-              <Panel defaultSize={40} minSize={25} className={cn("flex flex-col", currentTheme.panelBg)}>
+              <Panel defaultSize={40} minSize={25} className={cn("min-h-0 flex flex-col", currentTheme.panelBg)}>
                 <div className={cn("p-4 border-b flex items-center justify-between", currentTheme.border, currentTheme.subtleBg)}>
                   <div className="flex items-center gap-2">
                     <MessageSquare size={18} className="text-blue-500" />
@@ -1512,7 +1512,7 @@ export default function App() {
                   </button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
                   <textarea 
                     className={cn("w-full border rounded-lg p-3 text-xs font-bold focus:ring-1 focus:ring-blue-500 outline-none resize-none h-24 placeholder:opacity-40", currentTheme.inputBg, currentTheme.border, currentTheme.text)}
                     placeholder="Type broadcast message here..."
@@ -1589,22 +1589,30 @@ export default function App() {
           />
 
           {/* Main View: Controller */}
-          <Panel defaultSize={50} minSize={30} className={cn("flex flex-col items-center p-12 pt-32 pb-12 relative overflow-y-auto", currentTheme.bg)}>
-            <div className={cn("absolute top-8 left-8 flex items-center gap-3", currentTheme.muted)}>
-              <Activity size={16} className="text-emerald-500" />
-              <span className="text-[12px] font-black uppercase tracking-[0.4em]">Live Control</span>
+          <Panel
+            defaultSize={50}
+            minSize={30}
+            className={cn(
+              "min-h-0 flex flex-col items-center relative overflow-y-auto",
+              "p-4 pt-12 pb-5 lg:p-10 lg:pt-24 lg:pb-10",
+              currentTheme.bg
+            )}
+          >
+            <div className={cn("absolute top-3 left-4 flex items-center gap-2", currentTheme.muted)}>
+              <Activity size={15} className="text-emerald-500" />
+              <span className="text-[11px] font-black uppercase tracking-[0.34em]">Live Control</span>
             </div>
-            <div className={cn("absolute top-8 right-8 flex items-center gap-3", currentTheme.muted)}>
-              <Clock size={16} className="text-blue-400" />
-              <span className="text-[12px] font-black uppercase tracking-[0.25em]">{formatSystemClock(systemClock)}</span>
+            <div className={cn("absolute top-3 right-4 flex items-center gap-2", currentTheme.muted)}>
+              <Clock size={15} className="text-blue-400" />
+              <span className="text-[11px] font-black uppercase tracking-[0.2em]">{formatSystemClock(systemClock)}</span>
             </div>
 
             <div className={cn(
               config.fontFamily,
-              "inline-flex font-black tabular-nums leading-none mb-10 relative whitespace-nowrap select-none",
+              "inline-flex font-black tabular-nums leading-none mb-4 sm:mb-6 lg:mb-8 relative whitespace-nowrap select-none",
               currentTheme.text,
             )} style={{
-              fontSize: '9rem',
+              fontSize: 'clamp(4.75rem, 14vh, 10rem)',
               fontVariantNumeric: 'tabular-nums',
               fontFeatureSettings: '"tnum"',
             }}>
@@ -1612,7 +1620,7 @@ export default function App() {
             </div>
 
             {/* Status Indicators for Controller (only these animate / change color) */}
-            <div className="mb-16 h-12 flex items-center justify-center">
+            <div className="mb-4 sm:mb-6 lg:mb-10 h-12 flex items-center justify-center">
               {timeLeft === 0 ? (
                 <div
                   className="text-red-600 font-black uppercase tracking-[0.35em] text-4xl"
@@ -1630,16 +1638,16 @@ export default function App() {
               ) : null}
             </div>
 
-            <div className="flex items-center gap-8 mb-16">
+            <div className="flex items-center gap-4 lg:gap-8 mb-8 lg:mb-16">
               {!isActive ? (
                 <button 
                   onClick={() => startTimer(timeLeft)}
                   disabled={timeLeft === 0}
                   title="Start Timer (Space)"
-                  className="w-24 h-24 rounded-full bg-emerald-500 text-black flex items-center justify-center shadow-2xl shadow-emerald-500/20 disabled:opacity-20 relative group"
+                  className="w-18 h-18 lg:w-24 lg:h-24 rounded-full bg-emerald-500 text-black flex items-center justify-center shadow-2xl shadow-emerald-500/20 disabled:opacity-20 relative group"
                 >
-                  <Play size={36} fill="currentColor" className="ml-1" />
-                  <div className={cn("absolute -bottom-12 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border", currentTheme.bg === 'bg-white' ? "bg-slate-900 text-white border-slate-800" : "bg-black/80 text-white border-white/10")}>
+                  <Play size={30} fill="currentColor" className="ml-1" />
+                  <div className={cn("absolute -bottom-11 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border", currentTheme.bg === 'bg-white' ? "bg-slate-900 text-white border-slate-800" : "bg-black/80 text-white border-white/10")}>
                     SPACE TO START
                   </div>
                 </button>
@@ -1647,10 +1655,10 @@ export default function App() {
                 <button 
                   onClick={() => stopTimer()}
                   title="Pause Timer (Space)"
-                  className="w-24 h-24 rounded-full border-4 border-emerald-500 text-emerald-500 flex items-center justify-center relative group"
+                  className="w-18 h-18 lg:w-24 lg:h-24 rounded-full border-4 border-emerald-500 text-emerald-500 flex items-center justify-center relative group"
                 >
-                  <Pause size={36} fill="currentColor" />
-                  <div className={cn("absolute -bottom-12 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border", currentTheme.bg === 'bg-white' ? "bg-slate-900 text-white border-slate-800" : "bg-black/80 text-white border-white/10")}>
+                  <Pause size={30} fill="currentColor" />
+                  <div className={cn("absolute -bottom-11 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border", currentTheme.bg === 'bg-white' ? "bg-slate-900 text-white border-slate-800" : "bg-black/80 text-white border-white/10")}>
                     SPACE TO PAUSE
                   </div>
                 </button>
@@ -1660,37 +1668,37 @@ export default function App() {
                 disabled={agenda.length === 0 || (activeItem ? agenda.findIndex(a => a.id === activeItem.id) : selectedIndex) >= agenda.length - 1}
                 title="Next Agenda Item"
                 className={cn(
-                  "w-24 h-24 rounded-full flex items-center justify-center relative group border disabled:opacity-20",
+                  "w-18 h-18 lg:w-24 lg:h-24 rounded-full flex items-center justify-center relative group border disabled:opacity-20",
                   currentTheme.subtleBg,
                   currentTheme.border,
                   currentTheme.text,
                   "hover:opacity-80"
                 )}
               >
-                <ChevronRight size={36} />
-                <div className={cn("absolute -bottom-12 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border", currentTheme.bg === 'bg-white' ? "bg-slate-900 text-white border-slate-800" : "bg-black/80 text-white border-white/10")}>
+                <ChevronRight size={30} />
+                <div className={cn("absolute -bottom-11 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border", currentTheme.bg === 'bg-white' ? "bg-slate-900 text-white border-slate-800" : "bg-black/80 text-white border-white/10")}>
                   NEXT
                 </div>
               </button>
               <button 
                 onClick={handleReset}
                 title="Reset Timer (R)"
-                className={cn("w-24 h-24 rounded-full flex items-center justify-center relative group border", currentTheme.subtleBg, currentTheme.border, currentTheme.text, "hover:opacity-80")}
+                className={cn("w-18 h-18 lg:w-24 lg:h-24 rounded-full flex items-center justify-center relative group border", currentTheme.subtleBg, currentTheme.border, currentTheme.text, "hover:opacity-80")}
               >
-                <RotateCcw size={36} />
-                <div className={cn("absolute -bottom-12 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border", currentTheme.bg === 'bg-white' ? "bg-slate-900 text-white border-slate-800" : "bg-black/80 text-white border-white/10")}>
+                <RotateCcw size={30} />
+                <div className={cn("absolute -bottom-11 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border", currentTheme.bg === 'bg-white' ? "bg-slate-900 text-white border-slate-800" : "bg-black/80 text-white border-white/10")}>
                   R TO RESET
                 </div>
               </button>
             </div>
 
-            <div className="w-full max-w-xl space-y-6">
-              <div className={cn("flex items-center gap-4 p-4 rounded-2xl border focus-within:border-emerald-500/50 transition-all group", currentTheme.subtleBg, currentTheme.border)}>
+            <div className="w-full max-w-xl space-y-3 lg:space-y-6 pb-6">
+              <div className={cn("flex items-center gap-3 p-3 lg:p-4 rounded-2xl border focus-within:border-emerald-500/50 transition-all group", currentTheme.subtleBg, currentTheme.border)}>
                 <Clock size={20} className={cn("transition-colors", currentTheme.muted, "group-focus-within:text-emerald-500")} />
                 <input 
                   type="number" 
                   placeholder="Set Minutes Manually..." 
-                  className={cn("bg-transparent border-none p-0 focus:ring-0 text-lg font-black w-full placeholder:opacity-40", currentTheme.text)} 
+                  className={cn("bg-transparent border-none p-0 focus:ring-0 text-base font-black w-full placeholder:opacity-40", currentTheme.text)} 
                   onChange={(e) => { 
                     const val = parseInt(e.target.value);
                     if (!isNaN(val)) {
@@ -1703,7 +1711,7 @@ export default function App() {
                 <span className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.muted)}>Minutes</span>
               </div>
 
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-4 gap-2 lg:gap-3">
                 {[1, 5, 10, 15, 20, 30, 45, 60].map(m => (
                   <button 
                     key={m}
@@ -1712,7 +1720,7 @@ export default function App() {
                       setTimeLeft(m * 60 * 1000); 
                       setActiveItem(null); 
                     }}
-                    className={cn("py-3 rounded-xl border transition-all text-[10px] font-black uppercase tracking-widest hover:border-emerald-500/50 hover:bg-emerald-500/5", currentTheme.subtleBg, currentTheme.border, currentTheme.muted, "hover:text-inherit")}
+                    className={cn("py-2.5 lg:py-3 rounded-xl border transition-all text-[10px] font-black uppercase tracking-widest hover:border-emerald-500/50 hover:bg-emerald-500/5", currentTheme.subtleBg, currentTheme.border, currentTheme.muted, "hover:text-inherit")}
                   >
                     {m}m
                   </button>
@@ -1759,73 +1767,45 @@ export default function App() {
           />
 
           {/* Right Panel: Settings & Preview */}
-          <Panel defaultSize={30} minSize={20} className={cn("flex flex-col", currentTheme.panelBg)}>
-            {/* Preview Monitor */}
-            <div className={cn("p-6 border-b flex flex-col", currentTheme.border)}>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Monitor size={14} className="text-blue-500" />
-                  <span className={cn("text-[11px] font-black uppercase tracking-widest", currentTheme.muted)}>Preview Monitor</span>
+          <Panel defaultSize={30} minSize={20} className={cn("min-h-0 flex flex-col", currentTheme.panelBg)}>
+            <PanelGroup direction="vertical" className="min-h-0 flex-1">
+              <Panel defaultSize={35} minSize={18} className="min-h-0">
+                {/* Preview Monitor */}
+                <div className={cn("h-full p-4 border-b border-b-emerald-500/20 flex flex-col", currentTheme.border)}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Monitor size={14} className="text-blue-500" />
+                      <span className={cn("text-[11px] font-black uppercase tracking-widest", currentTheme.muted)}>Preview Monitor</span>
+                    </div>
+                    <button onClick={() => handleOpenDisplay(selectedOutputIndex)} className={cn("p-1.5 rounded-md text-emerald-500", currentTheme.subtleBg, "hover:opacity-80")}><Maximize2 size={14} /></button>
+                  </div>
+                  <div className="w-full sm:max-w-[360px] mx-auto">
+                    <div
+                      className={cn(
+                        "aspect-video bg-black rounded-xl border overflow-hidden relative shadow-2xl",
+                        currentTheme.border,
+                        "border-emerald-500/20"
+                      )}
+                    >
+                      {showPreview ? <TimerDisplay config={config} timeLeft={timeLeft} activeItem={activeItem} systemClock={systemClock} isActive={isActive} targetTime={targetTime} isPreview /> : (
+                        <div className={cn("absolute inset-0 flex items-center justify-center text-[10px] font-black uppercase tracking-[0.5em]", currentTheme.muted, "opacity-20")}>Signal Lost</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <button onClick={() => handleOpenDisplay(selectedOutputIndex)} className={cn("p-1.5 rounded-md text-emerald-500", currentTheme.subtleBg, "hover:opacity-80")}><Maximize2 size={14} /></button>
-              </div>
-              <div className={cn("aspect-video bg-black rounded-xl border overflow-hidden relative shadow-2xl", currentTheme.border)}>
-                {showPreview ? <TimerDisplay config={config} timeLeft={timeLeft} activeItem={activeItem} systemClock={systemClock} isActive={isActive} targetTime={targetTime} isPreview /> : (
-                  <div className={cn("absolute inset-0 flex items-center justify-center text-[10px] font-black uppercase tracking-[0.5em]", currentTheme.muted, "opacity-20")}>Signal Lost</div>
+              </Panel>
+
+              <PanelResizeHandle
+                className={cn(
+                  "h-2 cursor-row-resize transition-colors",
+                  "bg-emerald-500/20 hover:bg-emerald-500/50",
+                  "shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(0,0,0,0.35)]"
                 )}
-              </div>
-            </div>
+              />
 
-            {/* Appearance Settings */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
-              {/* Themes */}
-              <section>
-                <div className="flex items-center gap-2 mb-4">
-                  <Palette size={14} className="text-emerald-500" />
-                  <h3 className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.text)}>Theme Presets</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['dark', 'light', 'matrix', 'cyberpunk', 'minimal'] as ThemeMode[]).map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setConfig({ ...config, theme: t })}
-                      className={cn(
-                        "px-3 py-2 rounded-lg text-[10px] font-black capitalize border transition-all",
-                        config.theme === t 
-                          ? "bg-emerald-500 text-black border-emerald-500 shadow-lg" 
-                          : cn(currentTheme.subtleBg, currentTheme.border, currentTheme.muted, "hover:border-emerald-500/30")
-                      )}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              {/* Typography */}
-              <section>
-                <div className="flex items-center gap-2 mb-4">
-                  <Type size={14} className="text-emerald-500" />
-                  <h3 className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.text)}>Typography</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['font-sans', 'font-display', 'font-digital', 'font-mono', 'font-classic', 'font-impact', 'font-retro', 'font-heavy', 'font-clean', 'font-elegant'] as FontStyle[]).map(f => (
-                    <button
-                      key={f}
-                      onClick={() => setConfig({ ...config, fontFamily: f })}
-                      className={cn(
-                        "px-3 py-2 rounded-lg text-[10px] font-black capitalize border transition-all",
-                        config.fontFamily === f 
-                          ? "bg-emerald-500 text-black border-emerald-500 shadow-lg" 
-                          : cn(currentTheme.subtleBg, currentTheme.border, currentTheme.muted, "hover:border-emerald-500/30")
-                      )}
-                    >
-                      {f.replace('font-', '')}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
+              <Panel defaultSize={65} minSize={30} className="min-h-0">
+                {/* Appearance Settings */}
+                <div className="h-full overflow-y-auto p-4 lg:p-6 pb-6 space-y-4 lg:space-y-6 scrollbar-thin">
               {/* Outputs */}
               <section>
                 <div className="flex items-center justify-between mb-4">
@@ -1859,7 +1839,7 @@ export default function App() {
                       No outputs detected yet. Click refresh or open the display once.
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="max-h-44 overflow-y-auto pr-1 space-y-2 scrollbar-thin">
                       {outputs.map((o) => (
                         <button
                           key={`${o.kind}-${o.index}`}
@@ -1975,10 +1955,15 @@ export default function App() {
                   />
                 </div>
               </section>
-            </div>
+                </div>
+              </Panel>
+            </PanelGroup>
           </Panel>
         </PanelGroup>
       </div>
+
+      {/* Bottom safe area + separator (keeps UI off the taskbar edge) */}
+      <div className="shrink-0 h-4 border-t-2 border-emerald-500/70 bg-transparent" />
     </div>
   );
 }

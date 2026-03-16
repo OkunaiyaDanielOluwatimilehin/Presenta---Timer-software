@@ -19,7 +19,13 @@ Source code: https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-so
 Download (Windows)
 
 Download and install the latest `.msi` from the GitHub Releases page:
-https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-software/releases
+https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-software
+
+---
+
+App Icon (Windows)
+
+Run `npm run tauri:icon` to generate the Windows app icons in `src-tauri/icons/` from `public/android-chrome-512x512.png`.
 
 ---
 

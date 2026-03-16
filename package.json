@@ -1,9 +1,10 @@
 {
   "name": "presenta-pro",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "productName": "Presenta Pro",
+  "author": "Techie 4 Christ",
   "scripts": {
     "dev": "vite --port=3000 --host",
     "build": "vite build",
@@ -12,7 +13,8 @@
     "lint": "tsc --noEmit",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:icon": "tauri icon public/android-chrome-512x512.png"
   },
   "dependencies": {
     "@fontsource/anton": "^5.2.7",
