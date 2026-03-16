@@ -1,0 +1,120 @@
+/* 1. Imports MUST be at the top */
+@import "tailwindcss";
+
+/* 2. Your Theme Configuration */
+@theme {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Montserrat", sans-serif;
+  --font-digital: "Orbitron", sans-serif;
+  --font-classic: "Libre Baskerville", serif;
+  --font-impact: "Bebas Neue", sans-serif;
+  --font-retro: "Righteous", cursive;
+  --font-heavy: "Anton", sans-serif;
+  --font-clean: "Outfit", sans-serif;
+  --font-elegant: "Playfair Display", serif;
+}
+
+/* 3. Base Styles (Using Standard CSS to avoid @apply errors) */
+@layer base {
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: #0a0a0a;
+    color: #f0f0f0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  ::selection {
+    background-color: rgba(16, 185, 129, 0.3); /* emerald-500/30 */
+  }
+}
+
+/* 4. Custom Utilities */
+@layer utilities {
+  /* Glassmorphism */
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+  }
+  
+  .glass-dark {
+    @apply bg-black/60 backdrop-blur-2xl border border-white/5;
+  }
+
+  /* Glow Effects */
+  .text-glow {
+    filter: drop-shadow(0 0 25px rgba(255,255,255,0.3)) drop-shadow(0 10px 15px rgba(0,0,0,0.6));
+  }
+
+  .text-glow-emerald {
+    filter: drop-shadow(0 0 25px rgba(16,185,129,0.5));
+  }
+
+  .text-glow-red {
+    filter: drop-shadow(0 0 25px rgba(239,68,68,0.5));
+  }
+
+  /* Marquee Logic */
+  .marquee {
+    display: inline-block;
+    white-space: nowrap;
+    animation: marquee var(--duration, 20s) linear infinite;
+  }
+
+  @keyframes marquee {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+  }
+
+  /* Alert Pulse */
+  .animate-alert {
+    animation: alert-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes alert-pulse {
+    0%, 100% { opacity: 1; filter: brightness(1); }
+    50% { opacity: 0.8; filter: brightness(1.6); }
+  }
+
+  /* High-attention Flash */
+  .animate-flash {
+    animation: flash 0.6s steps(2, end) infinite;
+  }
+
+  @keyframes flash {
+    0% { opacity: 1; filter: brightness(1.2); }
+    50% { opacity: 0; filter: brightness(2); }
+    100% { opacity: 1; filter: brightness(1.2); }
+  }
+
+  /* Form Element Fixes */
+  select option {
+    background-color: #1a1a1a;
+    color: #ffffff;
+  }
+
+  .theme-light select option {
+    background-color: #ffffff;
+    color: #000000;
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: currentColor;
+    opacity: 0.4;
+  }
+
+  /* Scrollbar Hide */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
