@@ -4,7 +4,7 @@ import {
   Layout, Palette, Type, ChevronRight, MessageSquare, Maximize2, 
   Activity, RefreshCw, Save, Upload, Eye, EyeOff, MonitorPlay,
   FileText, Edit3, Layers, Settings2, Command, Github, ExternalLink,
-  MessageCircle, X, Check, Send
+  MessageCircle, X, Check, Send, ArrowLeft, Minus, Square, ArrowUp
 } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -45,7 +45,6 @@ type OutputTarget = {
   y?: number;
   isPrimary?: boolean;
   scaleFactor?: number;
-  kind: 'tauri' | 'web';
 };
 
 interface TimerConfig {
@@ -211,7 +210,6 @@ const TimerDisplay = ({
   const timerOuterRef = useRef<HTMLDivElement | null>(null);
   const timerInnerRef = useRef<HTMLDivElement | null>(null);
   const [timerScale, setTimerScale] = useState(1);
-  const isTauri = Boolean((window as any).__TAURI__);
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
 
   useEffect(() => {
@@ -252,7 +250,7 @@ const TimerDisplay = ({
       !isPreview && hasBroadcast && "pb-[9vh]"
     )}>
       {/* Web display: encourage fullscreen to hide browser chrome */}
-      {!isPreview && !isTauri && !isFullscreen && (
+      {!isPreview && !isFullscreen && (
         <div className="absolute top-4 right-4 z-[110]">
           <button
             type="button"
@@ -450,6 +448,24 @@ export default function App() {
   const [selectedOutputIndex, setSelectedOutputIndex] = useState<number | null>(null);
   const [isDisplayOpen, setIsDisplayOpen] = useState(false);
   const [showDisplayHelp, setShowDisplayHelp] = useState(false);
+
+  const handleCloseToHome = useCallback(() => {
+    window.location.hash = '#/';
+  }, []);
+
+  const [showLiveScrollTop, setShowLiveScrollTop] = useState(false);
+  const liveControlPanelElRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = document.getElementById('pp-live-control-panel') as HTMLElement | null;
+    liveControlPanelElRef.current = el;
+    if (!el) return;
+
+    const onScroll = () => setShowLiveScrollTop(el.scrollTop > 600);
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
   
   const [agenda, setAgenda] = useState<AgendaItem[]>(() => {
     const saved = localStorage.getItem('presenta-agenda-v6');
@@ -498,32 +514,9 @@ export default function App() {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`
   );
-  const isTauri = Boolean((window as any).__TAURI__);
  
   // --- Display Window Management ---
   const handleOpenDisplay = async (outputIndex?: number | null) => {
-    // Prefer native Tauri window creation when running as a desktop app.
-    // (window.open in Tauri typically opens the system browser instead of a new app window.)
-    if (isTauri) {
-      try {
-        const tauriGlobal = (window as any).__TAURI__;
-        const invoke =
-          tauriGlobal?.core?.invoke ??
-          tauriGlobal?.invoke;
-
-        if (typeof invoke === 'function') {
-          await invoke('open_display_window', outputIndex != null ? { output_index: outputIndex } : undefined);
-          setIsDisplayOpen(true);
-          return;
-        }
-      } catch (err) {
-        console.warn('Failed to open Tauri display window.', err);
-      }
-
-      setShowDisplayHelp(true);
-      return;
-    }
-
     const url = new URL(window.location.href);
     url.searchParams.set('display', 'true');
     
@@ -555,22 +548,6 @@ export default function App() {
   };
 
   const handleCloseDisplay = async () => {
-    if (isTauri) {
-      try {
-        const tauriGlobal = (window as any).__TAURI__;
-        const invoke =
-          tauriGlobal?.core?.invoke ??
-          tauriGlobal?.invoke;
-        if (typeof invoke === 'function') {
-          await invoke('close_display_window');
-          setIsDisplayOpen(false);
-          return;
-        }
-      } catch (err) {
-        console.warn('Failed to close Tauri display window.', err);
-      }
-    }
-
     try {
       // Best-effort for web: reuse window name and close if we can access it.
       const display = window.open('', 'PresentaProDisplay');
@@ -582,39 +559,6 @@ export default function App() {
   };
 
   const refreshOutputs = useCallback(async () => {
-    if (isTauri) {
-      try {
-        const tauriGlobal = (window as any).__TAURI__;
-        const invoke =
-          tauriGlobal?.core?.invoke ??
-          tauriGlobal?.invoke;
-        if (typeof invoke === 'function') {
-          const raw = await invoke('list_outputs');
-          const list = (Array.isArray(raw) ? raw : []).map((m: any) => ({
-            index: Number(m.index),
-            name: String(m.name ?? `Display ${Number(m.index) + 1}`),
-            width: Number(m.width),
-            height: Number(m.height),
-            x: Number(m.x),
-            y: Number(m.y),
-            isPrimary: Boolean(m.is_primary ?? m.isPrimary),
-            scaleFactor: Number(m.scale_factor ?? m.scaleFactor),
-            kind: 'tauri' as const,
-          }));
-          setOutputs(list);
-          if (selectedOutputIndex == null) {
-            const primary = list.find((o) => o.isPrimary);
-            setSelectedOutputIndex(primary?.index ?? list[0]?.index ?? null);
-          }
-          return;
-        }
-      } catch (err) {
-        console.warn('Failed to list outputs (Tauri).', err);
-      }
-      setOutputs([]);
-      return;
-    }
-
     // Web fallback (best-effort)
     try {
       if ('getScreenDetails' in window) {
@@ -628,7 +572,6 @@ export default function App() {
           x: Number(s.availLeft ?? 0),
           y: Number(s.availTop ?? 0),
           isPrimary: Boolean(s.isPrimary),
-          kind: 'web' as const,
         }));
         setOutputs(list);
         if (selectedOutputIndex == null) {
@@ -648,11 +591,10 @@ export default function App() {
         width: window.screen?.width ?? 0,
         height: window.screen?.height ?? 0,
         isPrimary: true,
-        kind: 'web' as const,
       },
     ]);
     if (selectedOutputIndex == null) setSelectedOutputIndex(0);
-  }, [isTauri, selectedOutputIndex]);
+  }, [selectedOutputIndex]);
 
   // --- Effects ---
   useEffect(() => {
@@ -965,6 +907,38 @@ export default function App() {
 
   return (
     <div className={cn("relative h-screen flex flex-col font-sans overflow-hidden", currentTheme.bg, currentTheme.text, `theme-${config.theme}`)}>
+      <div className={cn("flex h-10 items-center justify-between border-b px-3", currentTheme.navBg, currentTheme.border)}>
+        <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+          Presenta Pro
+        </div>
+        <div className="flex items-center">
+          <button
+            type="button"
+            className={cn("grid h-9 w-10 place-items-center rounded-md transition-colors", "hover:bg-white/10")}
+            aria-label="Minimize"
+            title="Minimize"
+          >
+            <Minus size={16} />
+          </button>
+          <button
+            type="button"
+            className={cn("grid h-9 w-10 place-items-center rounded-md transition-colors", "hover:bg-white/10")}
+            aria-label="Maximize"
+            title="Maximize"
+          >
+            <Square size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={handleCloseToHome}
+            className={cn("grid h-9 w-10 place-items-center rounded-md transition-colors", "hover:bg-red-500/80 hover:text-white")}
+            aria-label="Close"
+            title="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
       {/* Add Agenda Item Modal */}
       <AnimatePresence>
         {showAddAgendaModal && (
@@ -1204,7 +1178,7 @@ export default function App() {
 
               <div className={cn("space-y-4 text-sm leading-relaxed", currentTheme.text)}>
                 <div className={cn("p-4 rounded-2xl border", currentTheme.subtleBg, currentTheme.border)}>
-                  <div className="text-[11px] font-black uppercase tracking-widest mb-2">Desktop App (Tauri)</div>
+                  <div className="text-[11px] font-black uppercase tracking-widest mb-2">Display Mode</div>
                   <div className={cn("text-[12px] font-bold", currentTheme.muted)}>
                     Use <span className={currentTheme.text}>Settings → Outputs</span> to pick a screen and click <span className={currentTheme.text}>Turn On</span>.
                     If it opened in your browser before, that was a fallback — this modal prevents that now.
@@ -1237,7 +1211,7 @@ export default function App() {
 
       {/* Top Navigation */}
       <nav className={cn("h-12 border-b flex items-center px-4 gap-6 backdrop-blur-md z-50", currentTheme.navBg, currentTheme.border)}>
-        <div className="flex items-center gap-3">
+        <a href="#/" title="Back to landing page" className="flex items-center gap-3 no-underline">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20 shadow-lg shadow-emerald-500/15">
             <img
               src="/android-chrome-192x192.png"
@@ -1249,7 +1223,7 @@ export default function App() {
           <span className={cn("font-display font-black tracking-tighter text-lg", currentTheme.text)}>
             PRES<span className="text-emerald-500">NTA</span>
           </span>
-        </div>
+        </a>
 
           <div className="flex items-center gap-2 nav-menu-container">
             {[
@@ -1395,13 +1369,6 @@ export default function App() {
             href={SOURCE_CODE_URL}
             target="_blank" 
             rel="noopener noreferrer"
-            onClick={(e) => {
-              // In Tauri, we prefer opening external links in the system browser (not navigating the WebView).
-              if ((window as any).__TAURI__) {
-                e.preventDefault();
-                window.open(SOURCE_CODE_URL, '_blank', 'noopener,noreferrer');
-              }
-            }}
             className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-500 hover:text-emerald-400 transition-colors group"
           >
             <Github size={14} />
@@ -1598,9 +1565,10 @@ export default function App() {
           <Panel
             defaultSize={50}
             minSize={30}
+            id="pp-live-control-panel"
             className={cn(
-              "min-h-0 flex flex-col items-center relative overflow-y-auto",
-              "p-4 pt-12 pb-5 lg:p-10 lg:pt-24 lg:pb-10",
+              "min-h-0 flex flex-col items-center relative overflow-y-scroll [scrollbar-gutter:stable] pr-2",
+              "p-4 pt-10 pb-16 lg:p-8 lg:pt-16 lg:pb-16",
               currentTheme.bg
             )}
           >
@@ -1734,6 +1702,22 @@ export default function App() {
               </div>
             </div>
 
+            {showLiveScrollTop ? (
+              <button
+                type="button"
+                onClick={() => liveControlPanelElRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                className={cn(
+                  "absolute bottom-5 right-5 z-50 inline-flex items-center justify-center rounded-2xl border p-3 shadow-2xl backdrop-blur transition-colors",
+                  currentTheme.border,
+                  "bg-black/50 hover:bg-black/60",
+                )}
+                aria-label="Scroll to top"
+                title="Scroll to top"
+              >
+                <ArrowUp size={18} className="text-white/80" />
+              </button>
+            ) : null}
+
             {/* Broadcast Bar for Controller */}
             <AnimatePresence>
               {config.broadcast.show && config.broadcast.message && (
@@ -1848,7 +1832,7 @@ export default function App() {
                     <div className="max-h-44 overflow-y-auto pr-1 space-y-2 scrollbar-thin">
                       {outputs.map((o) => (
                         <button
-                          key={`${o.kind}-${o.index}`}
+                          key={o.index}
                           type="button"
                           onClick={() => setSelectedOutputIndex(o.index)}
                           className={cn(
@@ -1870,9 +1854,6 @@ export default function App() {
                                 {o.width}×{o.height}{o.isPrimary ? ' • Primary' : ''}
                               </div>
                             </div>
-                          </div>
-                          <div className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.muted)}>
-                            {o.kind === 'tauri' ? 'Desktop' : 'Web'}
                           </div>
                         </button>
                       ))}
@@ -1902,11 +1883,9 @@ export default function App() {
                     )}
                   </div>
 
-                  {!isTauri && (
-                    <div className={cn("text-[10px] font-bold leading-relaxed", currentTheme.muted)}>
-                      Web note: your browser may block pop-ups or screen placement. If the display doesn’t open, click Help.
-                    </div>
-                  )}
+                  <div className={cn("text-[10px] font-bold leading-relaxed", currentTheme.muted)}>
+                    Web note: your browser may block pop-ups or screen placement. If the display doesn’t open, click Help.
+                  </div>
                 </div>
               </section>
 

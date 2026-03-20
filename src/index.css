@@ -26,9 +26,12 @@
     margin: 0;
     background-color: #0a0a0a;
     color: #f0f0f0;
-    overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  body.app-mode {
+    overflow: hidden;
   }
   
   ::selection {
