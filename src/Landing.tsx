@@ -1,11 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   Check,
   ChevronDown,
   Download,
-  Cloud,
   LayoutDashboard,
+  Keyboard,
+  FileDown,
+  FileUp,
+  Zap,
+  Globe,
+  Laptop,
+  Smartphone,
+  Package,
   MessageSquareText,
   MonitorPlay,
   Palette,
@@ -17,11 +24,13 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { RELEASES } from './releases';
 
 const DEFAULT_DOWNLOAD_PATH = 'download/PresentaProInstaller.msi';
 const HERO_TITLE = 'PRESENTA PRO';
 const HERO_HEADLINE = 'STAGE TIMING THAT LOOKS PRO.';
 const DEFAULT_FORMSPREE_ENDPOINT = 'https://formspree.io/f/mnjgzdbv';
+const DOWNLOAD_GATE_STORAGE_KEY = 'pp_download_gate_v1';
 
 type Props = {
   onOpenApp: () => void;
@@ -56,12 +65,17 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
   const resolvedDownloadUrl = downloadUrl ?? assetUrl(DEFAULT_DOWNLOAD_PATH);
   const formspreeEndpoint =
     (import.meta as any)?.env?.VITE_FORMSPREE_ENDPOINT ?? DEFAULT_FORMSPREE_ENDPOINT;
+  const downloadFormspreeEndpoint =
+    (import.meta as any)?.env?.VITE_DOWNLOAD_FORMSPREE_ENDPOINT ?? formspreeEndpoint;
 
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [heroTyped, setHeroTyped] = useState('');
   const [previewSelectedAgendaIndex, setPreviewSelectedAgendaIndex] = useState(0);
   const [previewTimeLeftMs, setPreviewTimeLeftMs] = useState(0);
   const previewLastTickMsRef = useRef<number | null>(null);
+  const [featureIndex, setFeatureIndex] = useState(0);
+  const featuresScrollerRef = useRef<HTMLDivElement | null>(null);
+  const featuresScrollRafRef = useRef<number | null>(null);
 
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
@@ -69,6 +83,14 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
   const [feedbackName, setFeedbackName] = useState('');
   const [feedbackEmail, setFeedbackEmail] = useState('');
   const [feedbackMessage, setFeedbackMessage] = useState('');
+
+  const [showDownloadGate, setShowDownloadGate] = useState(false);
+  const [downloadGateStatus, setDownloadGateStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [downloadName, setDownloadName] = useState('');
+  const [downloadEmail, setDownloadEmail] = useState('');
+  const [downloadOrg, setDownloadOrg] = useState('');
+  const [downloadReason, setDownloadReason] = useState<'church' | 'conference' | 'broadcast' | 'school' | 'other'>('church');
+  const [downloadAllowUpdates, setDownloadAllowUpdates] = useState(true);
 
   const previewAgenda = useMemo(
     () => [
@@ -79,6 +101,61 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
     ],
     [],
   );
+
+  const features = useMemo(
+    () => [
+      { icon: <LayoutDashboard size={18} className="text-emerald-200" />, t: 'Live controller', d: 'Start/pause, reset, and jump to agenda items quickly.' },
+      { icon: <Timer size={18} className="text-emerald-200" />, t: 'Agenda management', d: 'Build a full event flow and load the active item instantly.' },
+      { icon: <MonitorPlay size={18} className="text-emerald-200" />, t: 'Display mode', d: 'Open a fullscreen-ready stage output window from the controller.' },
+      { icon: <MessageSquareText size={18} className="text-emerald-200" />, t: 'Broadcast messages', d: 'Send notices, alerts, or scrolling messages to the stage display.' },
+      { icon: <Keyboard size={18} className="text-emerald-200" />, t: 'Keyboard shortcuts', d: 'Operate quickly: Space, Ctrl+D, Ctrl+S, Ctrl+O, Ctrl+Z/Y and more.' },
+      { icon: <FileDown size={18} className="text-emerald-200" />, t: 'Export agenda (JSON)', d: 'Back up your full agenda and move it between devices.' },
+      { icon: <FileUp size={18} className="text-emerald-200" />, t: 'Import agenda (JSON)', d: 'Load an agenda file and keep the show moving.' },
+      { icon: <Palette size={18} className="text-emerald-200" />, t: 'Themes + typography', d: 'Professional themes and offline-ready fonts with bold readability.' },
+      { icon: <Zap size={18} className="text-emerald-200" />, t: 'Fast and lightweight', d: 'Runs locally in your browser with no account required.' },
+      { icon: <Laptop size={18} className="text-emerald-200" />, t: 'Desktop app', d: 'Windows desktop build available, with a Linux distro build coming soon.' },
+      { icon: <Smartphone size={18} className="text-emerald-200" />, t: 'Mobile controller', d: 'A simple phone controller is planned for live operation (coming soon).' },
+      { icon: <Package size={18} className="text-emerald-200" />, t: 'Linux distro', d: 'Linux packages (e.g. AppImage/.deb) are planned (coming soon).' },
+      { icon: <Globe size={18} className="text-emerald-200" />, t: 'Works anywhere', d: 'Use Chrome/Edge on Windows, macOS, or Linux — plus an optional Windows installer.' },
+    ],
+    [],
+  );
+
+  const scrollToFeature = useCallback(
+    (nextIndex: number) => {
+      const el = featuresScrollerRef.current;
+      if (!el) return;
+      const clamped = Math.max(0, Math.min(features.length - 1, nextIndex));
+      const cards = Array.from(el.querySelectorAll<HTMLElement>('[data-feature-card]'));
+      const target = cards[clamped];
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+      setFeatureIndex(clamped);
+    },
+    [features.length],
+  );
+
+  const onFeaturesScroll = useCallback(() => {
+    const el = featuresScrollerRef.current;
+    if (!el) return;
+    if (featuresScrollRafRef.current != null) return;
+    featuresScrollRafRef.current = window.requestAnimationFrame(() => {
+      featuresScrollRafRef.current = null;
+      const cards = Array.from(el.querySelectorAll<HTMLElement>('[data-feature-card]'));
+      if (!cards.length) return;
+      const left = el.scrollLeft;
+      let best = 0;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < cards.length; i += 1) {
+        const dist = Math.abs(cards[i]!.offsetLeft - left);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = i;
+        }
+      }
+      setFeatureIndex(best);
+    });
+  }, []);
 
   const formatPreviewTime = (ms: number) => {
     const clamped = Math.max(0, ms);
@@ -183,6 +260,77 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  const triggerDownload = useCallback(() => {
+    if (typeof document === 'undefined') return;
+
+    const a = document.createElement('a');
+    a.href = resolvedDownloadUrl;
+    a.download = '';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }, [resolvedDownloadUrl]);
+
+  const openDownloadForm = useCallback(() => {
+    setShowDownloadGate(true);
+    setDownloadGateStatus('idle');
+  }, []);
+
+  const submitDownloadGate = useCallback(async () => {
+    if (!downloadEmail.trim()) return;
+
+    setDownloadGateStatus('submitting');
+    try {
+      const payload = {
+        name: downloadName,
+        email: downloadEmail,
+        organization: downloadOrg,
+        reason: downloadReason,
+        allowUpdates: downloadAllowUpdates ? 'yes' : 'no',
+        downloadUrl: resolvedDownloadUrl,
+        app: 'presenta-pro',
+        page: 'landing',
+        type: 'download',
+        version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : undefined,
+      };
+
+      if (downloadFormspreeEndpoint) {
+        const res = await fetch(downloadFormspreeEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) throw new Error('download gate failed');
+      }
+
+      try {
+        window.localStorage?.setItem(
+          DOWNLOAD_GATE_STORAGE_KEY,
+          JSON.stringify({ ...payload, ts: Date.now() }),
+        );
+      } catch {
+        // ignore storage failures (private mode, etc.)
+      }
+
+      setDownloadGateStatus('success');
+      triggerDownload();
+    } catch {
+      setDownloadGateStatus('error');
+    }
+  }, [
+    downloadAllowUpdates,
+    downloadEmail,
+    downloadFormspreeEndpoint,
+    downloadName,
+    downloadOrg,
+    downloadReason,
+    resolvedDownloadUrl,
+    triggerDownload,
+  ]);
+
   const submitFeedback = async () => {
     if (!feedbackMessage.trim()) return;
 
@@ -220,6 +368,10 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
         a: 'Yes. Your agenda and settings are stored locally in your browser (LocalStorage).',
       },
       {
+        q: 'Do I need an account?',
+        a: 'No. Presenta Pro works in the browser and stores data locally on your device.',
+      },
+      {
         q: 'How do I show the timer on an external monitor?',
         a: 'Open the web app, then use the Outputs panel to open Display Mode in a new window. Drag it to your external monitor and go fullscreen.',
       },
@@ -228,15 +380,35 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
         a: 'Your browser may block pop-ups. Allow pop-ups for this site, then try again.',
       },
       {
+        q: 'Can I run this on a phone or tablet?',
+        a: 'You can, but Presenta Pro is designed for a laptop/desktop operator plus an external display. For best results, use a desktop browser (Chrome/Edge).',
+      },
+      {
+        q: 'How do I save or share my agenda?',
+        a: 'Inside the app, use File → Save Agenda to export a JSON file. You can import it later with File → Load Agenda.',
+      },
+      {
+        q: 'Will it work on a weak PC?',
+        a: 'Yes. It is lightweight and runs locally in your browser. If you use Display Mode + animations, a modern Chrome/Edge browser is recommended.',
+      },
+      {
         q: 'Can I still use the Windows installer?',
         a: 'Yes. Click Download installer to get the Windows (.msi) file directly from this website.',
+      },
+      {
+        q: 'Is there a desktop app for Linux?',
+        a: 'A Linux distro build is planned (coming soon). For now, the web app works on Linux in Chrome/Edge.'
+      },
+      {
+        q: 'Will there be a phone controller?',
+        a: 'A simple mobile controller is planned (coming soon).',
       },
     ],
     [],
   );
 
   return (
-    <div className="min-h-dvh w-full overflow-x-hidden bg-[#060707] text-white [background-image:radial-gradient(900px_500px_at_15%_10%,rgba(16,185,129,0.20),transparent_60%),radial-gradient(800px_520px_at_85%_12%,rgba(34,211,238,0.16),transparent_60%),radial-gradient(900px_640px_at_50%_120%,rgba(168,85,247,0.10),transparent_60%)]">
+    <div className="min-h-dvh w-full overflow-x-hidden bg-[#060707] text-white bg-[radial-gradient(900px_500px_at_15%_10%,rgba(16,185,129,0.20),transparent_60%),radial-gradient(800px_520px_at_85%_12%,rgba(34,211,238,0.16),transparent_60%),radial-gradient(900px_640px_at_50%_120%,rgba(168,85,247,0.10),transparent_60%)]">
       <style>{`
         @keyframes pp_shimmer {
           0% { background-position: 0% 50%; }
@@ -268,6 +440,9 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
             <a className="hover:text-white" href="#features">
               Features
             </a>
+            <a className="hover:text-white" href="#releases">
+              Releases
+            </a>
             <a className="hover:text-white" href="#faq">
               FAQ
             </a>
@@ -283,24 +458,24 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
               Open web app
               <ArrowRight size={14} className="text-white/70" />
             </button>
-            <a
-              href={resolvedDownloadUrl}
+            <button
+              type="button"
+              onClick={openDownloadForm}
               className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 p-2 text-white/85 hover:bg-white/10 sm:hidden"
               aria-label="Download installer (Windows .msi)"
               title="Download installer (Windows .msi)"
-              download
             >
               <WindowsIcon size={16} />
-            </a>
-            <a
-              href={resolvedDownloadUrl}
+            </button>
+            <button
+              type="button"
+              onClick={openDownloadForm}
               className="hidden items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-black hover:opacity-90 sm:inline-flex"
-              download
             >
               <WindowsIcon size={14} />
               Download installer
               <Download size={14} />
-            </a>
+            </button>
           </div>
         </div>
       </header>
@@ -364,35 +539,35 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                 </motion.h1>
 
                 <motion.div
-                  className="mt-3 text-balance text-sm font-semibold uppercase tracking-[0.14em] text-white/70 md:text-base"
+                  className="mt-3 text-balance text-base font-black uppercase tracking-[0.10em] text-white/85 md:text-lg"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.55, ease: 'easeOut', delay: 0.06 }}
                 >
-                  <span className="bg-gradient-to-r from-emerald-200 via-cyan-100 to-fuchsia-200/70 bg-[length:200%_100%] bg-clip-text text-transparent [animation:pp_shimmer_7s_linear_infinite]">
+                  <span className="bg-linear-to-r from-emerald-100 via-white to-cyan-100 bg-size-[200%_100%] bg-clip-text text-transparent drop-shadow-[0_1px_18px_rgba(16,185,129,0.20)] animate-[pp_shimmer_7s_linear_infinite]">
                     {heroTyped}
                   </span>
                   <span
                     aria-hidden="true"
-                    className="ml-0.5 align-baseline font-normal text-emerald-200/65 [animation:pp_blink_1s_steps(1)_infinite]"
+                    className="ml-1 inline-block translate-y-[1px] font-black text-white/80 animate-[pp_blink_1s_steps(1)_infinite]"
                   >
                     ▏
                   </span>
                 </motion.div>
 
                 <motion.p
-                  className="mt-5 max-w-[62ch] text-pretty text-sm font-bold leading-relaxed text-white/60 md:text-base mx-auto"
+                  className="mt-5 mx-auto max-w-[64ch] text-pretty text-sm font-semibold leading-relaxed text-white/75 md:text-base"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.55, ease: 'easeOut', delay: 0.08 }}
                 >
-                  Run a precise timer, manage agenda segments, open a dedicated fullscreen display window, and send broadcast
-                  messages — all in the browser.
+                  Run a precise stage timer. Build an agenda. Send a clean fullscreen display to a second screen, and show
+                  broadcast messages — all in your browser.
                 </motion.p>
               </motion.div>
 
               <motion.div
-                className="h-full w-full overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-emerald-500/10 via-white/5 to-cyan-400/10 p-5 shadow-[0_40px_120px_rgba(0,0,0,0.65)] md:p-6"
+                className="h-full w-full overflow-hidden rounded-3xl border border-white/10 bg-linear-to-br from-emerald-500/10 via-white/5 to-cyan-400/10 p-5 shadow-[0_40px_120px_rgba(0,0,0,0.65)] md:p-6"
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, ease: 'easeOut', delay: 0.12 }}
@@ -430,7 +605,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
 
                       <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/5">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-cyan-400 to-fuchsia-500 transition-[width] duration-150"
+                          className="h-full rounded-full bg-linear-to-r from-emerald-500 via-cyan-400 to-fuchsia-500 transition-[width] duration-150"
                           style={{
                             width: `${Math.max(
                               0,
@@ -470,7 +645,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                               {active ? (
                                 <motion.span
                                   layoutId="pp_agenda_active"
-                                  className="absolute inset-0 rounded-full bg-gradient-to-r from-emerald-500/25 via-cyan-400/15 to-fuchsia-500/20"
+                                  className="absolute inset-0 rounded-full bg-linear-to-r from-emerald-500/25 via-cyan-400/15 to-fuchsia-500/20"
                                   transition={{ type: 'spring', stiffness: 500, damping: 38 }}
                                 />
                               ) : null}
@@ -501,8 +676,8 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                 <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">About</div>
                 <h2 className="mt-2 text-2xl font-black tracking-tight md:text-3xl">Built for stage clarity.</h2>
                 <p className="mt-3 max-w-[74ch] text-sm font-bold leading-relaxed text-white/60">
-                  Presenta Pro combines a live controller, agenda segments, and a dedicated display window into a clean,
-                  stage-friendly workflow — optimized for both church services and live programs.
+                  Presenta Pro brings a live controller, agenda segments, and a dedicated display window into one clean,
+                  stage-friendly workflow — optimized for church services, conferences, and live programs.
                 </p>
               </div>
             </div>
@@ -511,7 +686,10 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
               {[
                 { icon: <MonitorPlay size={18} className="text-emerald-400" />, t: 'Operator + display', d: 'Controller window + dedicated stage output window.' },
                 { icon: <WifiOff size={18} className="text-emerald-400" />, t: 'Offline-ready', d: 'Agendas and settings persist locally in your browser.' },
-                { icon: <Shield size={18} className="text-emerald-400" />, t: 'Reliable workflow', d: 'Designed to fit real stage operations and quick changes.' },
+                { icon: <Keyboard size={18} className="text-emerald-400" />, t: 'Keyboard friendly', d: 'Fast shortcuts for start/pause, display, save/load, and undo/redo.' },
+                { icon: <FileDown size={18} className="text-emerald-400" />, t: 'Export agenda', d: 'Save your agenda as a JSON file for backup or sharing.' },
+                { icon: <FileUp size={18} className="text-emerald-400" />, t: 'Import agenda', d: 'Load a saved agenda in seconds and keep the show moving.' },
+                { icon: <Shield size={18} className="text-emerald-400" />, t: 'Stage reliable', d: 'Designed for quick edits and live changes without clutter.' },
               ].map((c) => (
                 <motion.div
                   key={c.t}
@@ -536,7 +714,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
 
         <motion.section
           id="features"
-          className="border-t border-white/10 bg-white/[0.02]"
+          className="border-t border-white/10 bg-white/2"
           initial={{ opacity: 0, y: 14 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-80px' }}
@@ -545,19 +723,74 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
           <div className="mx-auto max-w-6xl px-4 py-14">
             <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">Features</div>
             <h2 className="mt-2 text-2xl font-black tracking-tight md:text-3xl">Everything you need on stage.</h2>
+            <p className="mt-3 max-w-[78ch] text-sm font-semibold leading-relaxed text-white/65">
+              Swipe through the highlights, or use the arrows to browse. No auto-scrolling.
+            </p>
 
-            <div className="mt-6 grid gap-3 md:grid-cols-2">
-              {[
-                { icon: <LayoutDashboard size={18} className="text-emerald-200" />, t: 'Live controller', d: 'Start/pause, reset, and jump to agenda items quickly.' },
-                { icon: <Timer size={18} className="text-emerald-200" />, t: 'Agenda management', d: 'Build a full event flow and load the active item instantly.' },
-                { icon: <MonitorPlay size={18} className="text-emerald-200" />, t: 'Display mode', d: 'Open a fullscreen-ready stage output window from the controller.' },
-                { icon: <MessageSquareText size={18} className="text-emerald-200" />, t: 'Broadcast messages', d: 'Send notices, alerts, or scrolling messages to the stage display.' },
-                { icon: <Palette size={18} className="text-emerald-200" />, t: 'Themes + typography', d: 'Professional themes and offline-ready fonts with bold readability.' },
-                { icon: <Cloud size={18} className="text-emerald-200" />, t: 'Static hosting', d: 'Deploy as a static site (GitHub Pages, Vercel, Netlify, S3).' },
-              ].map(({ icon, t, d }) => (
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/50">
+                {featureIndex + 1} / {features.length}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => scrollToFeature(featureIndex - 1)}
+                  disabled={featureIndex === 0}
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-[0.22em] transition",
+                    "border-white/10 bg-white/5 text-white/80 hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-white/5"
+                  )}
+                  aria-label="Previous feature"
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToFeature(featureIndex + 1)}
+                  disabled={featureIndex === features.length - 1}
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-[0.22em] transition",
+                    "border-white/10 bg-white/5 text-white/80 hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-white/5"
+                  )}
+                  aria-label="Next feature"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+
+            <div
+              ref={featuresScrollerRef}
+              onScroll={onFeaturesScroll}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  scrollToFeature(featureIndex - 1);
+                }
+                if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  scrollToFeature(featureIndex + 1);
+                }
+              }}
+              tabIndex={0}
+              role="region"
+              aria-label="Features carousel"
+              className={cn(
+                "mt-4 flex gap-3 overflow-x-auto pb-3",
+                "snap-x snap-mandatory scroll-smooth",
+                "focus:outline-none focus:ring-1 focus:ring-emerald-400/40 rounded-3xl"
+              )}
+              style={{ scrollbarWidth: 'none' as any }}
+            >
+              {features.map(({ icon, t, d }) => (
                 <motion.div
                   key={t}
-                  className="group relative overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-4 shadow-[0_0_0_1px_rgba(0,0,0,0.10)_inset]"
+                  data-feature-card
+                  className={cn(
+                    "snap-start",
+                    "min-w-[min(86vw,420px)] md:min-w-[420px]",
+                    "group relative overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-4 shadow-[0_0_0_1px_rgba(0,0,0,0.10)_inset]"
+                  )}
                   whileHover={{ y: -2 }}
                   transition={{ duration: 0.2 }}
                 >
@@ -571,9 +804,28 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                     </div>
                     <div className="text-[12px] font-black uppercase tracking-[0.22em] text-white/90">{t}</div>
                   </div>
-                  <div className="mt-2.5 text-[12px] font-semibold leading-relaxed text-white/60">{d}</div>
+                  <div className="mt-2.5 text-[12px] font-semibold leading-relaxed text-white/65">{d}</div>
                 </motion.div>
               ))}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {features.map((f, idx) => {
+                const active = idx === featureIndex;
+                return (
+                  <button
+                    key={f.t}
+                    type="button"
+                    onClick={() => scrollToFeature(idx)}
+                    className={cn(
+                      "h-2.5 w-2.5 rounded-full border transition",
+                      active ? "bg-emerald-400 border-emerald-400" : "bg-white/10 border-white/15 hover:bg-white/20"
+                    )}
+                    aria-label={`Go to feature ${idx + 1}: ${f.t}`}
+                    aria-current={active ? 'true' : undefined}
+                  />
+                );
+              })}
             </div>
           </div>
         </motion.section>
@@ -597,10 +849,10 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                     key={f.q}
                     type="button"
                     onClick={() => setOpenFaq((prev) => (prev === idx ? null : idx))}
-                    className="rounded-3xl border border-white/10 bg-white/5 px-5 py-4 text-left shadow-[0_0_0_1px_rgba(0,0,0,0.12)_inset] hover:bg-white/[0.06]"
+                    className="rounded-3xl border border-white/10 bg-white/5 px-5 py-4 text-left shadow-[0_0_0_1px_rgba(0,0,0,0.12)_inset] hover:bg-white/6"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-[12px] font-black uppercase tracking-[0.18em] text-white/90">{f.q}</div>
+                      <div className="text-[13px] font-black tracking-tight text-white/90">{f.q}</div>
                       <ChevronDown
                         size={18}
                         className={cn('text-white/60 transition-transform', open && 'rotate-180')}
@@ -612,11 +864,98 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                       transition={{ duration: 0.25, ease: 'easeOut' }}
                       className="overflow-hidden"
                     >
-                      <div className="mt-3 text-[12px] font-bold leading-relaxed text-white/60">{f.a}</div>
+                      <div className="mt-3 text-[12px] font-semibold leading-relaxed text-white/70">{f.a}</div>
                     </motion.div>
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </motion.section>
+
+        <motion.section
+          id="releases"
+          className="border-t border-white/10 bg-white/2"
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-80px' }}
+          transition={{ duration: 0.55, ease: 'easeOut' }}
+        >
+          <div className="mx-auto max-w-6xl px-4 py-14">
+            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">Releases</div>
+            <h2 className="mt-2 text-2xl font-black tracking-tight md:text-3xl">Version history.</h2>
+            <p className="mt-3 max-w-[78ch] text-sm font-semibold leading-relaxed text-white/65">
+              What's new, system requirements, and download details.
+            </p>
+
+            <div className="mt-8 grid gap-4 md:grid-cols-2">
+              <div className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_40px_140px_rgba(0,0,0,0.55)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">Latest</div>
+                    <div className="mt-2 text-lg font-black tracking-tight text-white/90">
+                      v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : RELEASES[0]?.version ?? '1.x'}
+                    </div>
+                    <div className="mt-2 text-[12px] font-semibold leading-relaxed text-white/55">
+                      Windows installer is an .msi. The web app also runs directly in your browser.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openDownloadForm}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-[10px] font-black uppercase tracking-[0.22em] text-black hover:opacity-90"
+                  >
+                    Download
+                    <Download size={14} />
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">
+                      System requirements
+                    </div>
+                    <ul className="mt-2 grid gap-1 text-[12px] font-semibold text-white/70">
+                      <li>Windows 10/11 (64-bit) for the installer</li>
+                      <li>Chrome/Edge recommended for the web app</li>
+                      <li>Offline-ready (LocalStorage); export agenda for backups</li>
+                    </ul>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">
+                      Download URL
+                    </div>
+                    <div className="mt-2 break-all text-[11px] font-semibold text-white/55">
+                      {resolvedDownloadUrl}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_0_1px_rgba(0,0,0,0.12)_inset]">
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">
+                  Release notes
+                </div>
+                <div className="mt-4 grid gap-3">
+                  {RELEASES.map((r) => (
+                    <div key={r.version} className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-[12px] font-black tracking-tight text-white/90">v{r.version}</div>
+                        {r.date ? (
+                          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">
+                            {r.date}
+                          </div>
+                        ) : null}
+                      </div>
+                      <ul className="mt-2 grid gap-1 text-[12px] font-semibold text-white/65">
+                        {r.highlights.map((h) => (
+                          <li key={h}>{h}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </motion.section>
@@ -650,15 +989,15 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                     Open web app
                     <ArrowRight size={16} />
                   </button>
-                  <a
-                    href={resolvedDownloadUrl}
+                  <button
+                    type="button"
+                    onClick={openDownloadForm}
                     className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-[11px] font-black uppercase tracking-[0.22em] text-white/90 hover:bg-white/10"
-                    download
                   >
                     <WindowsIcon size={16} className="text-white/85" />
                     Download installer
                     <Download size={16} className="text-white/70" />
-                  </a>
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -677,9 +1016,9 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
             <button type="button" onClick={onOpenApp} className="hover:text-white">
               Open web app
             </button>
-            <a href={resolvedDownloadUrl} download className="hover:text-white">
+            <button type="button" onClick={openDownloadForm} className="bg-transparent p-0 hover:text-white">
               Download installer
-            </a>
+            </button>
             <a
               href="https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-software"
               target="_blank"
@@ -803,6 +1142,153 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                   {feedbackStatus === 'submitting' ? 'Sending…' : 'Send'}
                   <Send size={16} />
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showDownloadGate ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+            aria-label="Close download form"
+            onClick={() => setShowDownloadGate(false)}
+          />
+
+          <div className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-black/70 p-6 shadow-[0_50px_180px_rgba(0,0,0,0.75)] backdrop-blur md:p-7">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">Download</div>
+                <div className="mt-2 text-xl font-black tracking-tight text-white/90">
+                  Get the Windows installer.
+                </div>
+                <div className="mt-2 text-[12px] font-semibold leading-relaxed text-white/55">
+                  Fill this quick form, then your download starts immediately.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDownloadGate(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                aria-label="Close"
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-white/70">
+                <div className="inline-flex items-center gap-2">
+                  <WindowsIcon size={14} className="text-white/80" />
+                  Windows 10/11 (64-bit) • .msi
+                </div>
+                <div className="text-[11px] font-black uppercase tracking-[0.22em] text-white/55">
+                  v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.x'}
+                </div>
+              </div>
+              <div className="mt-2 text-[11px] font-semibold leading-relaxed text-white/50 break-all">
+                {resolvedDownloadUrl}
+              </div>
+            </div>
+
+            <form
+              className="mt-5 grid gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submitDownloadGate();
+              }}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <input
+                  value={downloadName}
+                  onChange={(e) => setDownloadName(e.target.value)}
+                  placeholder="Name (optional)"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] font-semibold text-white/90 outline-none placeholder:text-white/35 focus:ring-2 focus:ring-emerald-500/40"
+                />
+                <input
+                  value={downloadEmail}
+                  onChange={(e) => setDownloadEmail(e.target.value)}
+                  placeholder="Email (required)"
+                  inputMode="email"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] font-semibold text-white/90 outline-none placeholder:text-white/35 focus:ring-2 focus:ring-emerald-500/40"
+                />
+              </div>
+
+              <input
+                value={downloadOrg}
+                onChange={(e) => setDownloadOrg(e.target.value)}
+                placeholder="Organization (optional)"
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] font-semibold text-white/90 outline-none placeholder:text-white/35 focus:ring-2 focus:ring-emerald-500/40"
+              />
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-1">
+                  <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">Use case</div>
+                  <select
+                    value={downloadReason}
+                    onChange={(e) => setDownloadReason(e.target.value as any)}
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] font-semibold text-white/90 outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  >
+                    <option value="church">Church</option>
+                    <option value="conference">Conference</option>
+                    <option value="broadcast">Broadcast</option>
+                    <option value="school">School</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={downloadAllowUpdates}
+                    onChange={(e) => setDownloadAllowUpdates(e.target.checked)}
+                    className="h-4 w-4 accent-emerald-500"
+                  />
+                  <div className="text-[12px] font-semibold text-white/70">Send me updates</div>
+                </label>
+              </div>
+
+              {downloadGateStatus === 'success' ? (
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-[12px] font-semibold text-emerald-100">
+                  Thanks! Download started.
+                </div>
+              ) : downloadGateStatus === 'error' ? (
+                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[12px] font-semibold text-red-100">
+                  Couldn't submit the form. You can still download.
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                <div className="text-[11px] font-semibold text-white/45">
+                  {String(downloadFormspreeEndpoint || '').includes('formspree.io')
+                    ? 'Powered by Formspree.'
+                    : 'Set `VITE_DOWNLOAD_FORMSPREE_ENDPOINT` to capture downloads.'}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {downloadGateStatus === 'error' ? (
+                    <button
+                      type="button"
+                      onClick={triggerDownload}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[11px] font-black uppercase tracking-[0.22em] text-white/90 hover:bg-white/10"
+                    >
+                      Download anyway
+                      <Download size={16} className="text-white/70" />
+                    </button>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={downloadGateStatus === 'submitting' || !downloadEmail.trim()}
+                    className={cn(
+                      'inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-[11px] font-black uppercase tracking-[0.22em] text-black shadow-[0_18px_60px_rgba(16,185,129,0.25)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60',
+                    )}
+                  >
+                    {downloadGateStatus === 'submitting' ? 'Submittingâ€¦' : 'Continue'}
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
               </div>
             </form>
           </div>

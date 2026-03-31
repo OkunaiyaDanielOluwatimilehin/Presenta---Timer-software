@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Play, Pause, RotateCcw, Monitor, Settings, Clock, Plus, Trash2, 
-  Layout, Palette, Type, ChevronRight, MessageSquare, Maximize2, 
+  Layout, LayoutDashboard, Palette, Type, ChevronRight, MessageSquare, Maximize2, 
   Activity, RefreshCw, Save, Upload, Eye, EyeOff, MonitorPlay,
   FileText, Edit3, Layers, Settings2, Command, Github, ExternalLink,
-  MessageCircle, X, Check, Send, ArrowLeft, Minus, Square, ArrowUp
+  MessageCircle, X, Check, Send, ArrowLeft, Minus, Square, ArrowUp, Wifi, Bluetooth, Shield, Timer
 } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -65,6 +65,12 @@ interface TimerConfig {
     startTime: number | null;
   };
 }
+
+type SyncMessage =
+  | { senderId?: string; type: 'SYNC_STATE'; payload: Partial<{ timeLeft: number; isActive: boolean; targetTime: number | null; selectedIndex: number; activeItem: AgendaItem | null; agenda: AgendaItem[]; config: TimerConfig }> }
+  | { senderId?: string; type: 'REQUEST_SYNC' };
+
+const WALKTHROUGH_SEEN_KEY = 'pp-walkthrough-seen-v1';
 
 /**
  * Constants
@@ -431,7 +437,14 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(300000); // Default 5 minutes in ms
   const [isActive, setIsActive] = useState(false);
   const [targetTime, setTargetTime] = useState<number | null>(null);
-  const [isDisplayMode, setIsDisplayMode] = useState(false);
+  const isDisplayMode = useMemo(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('display') === 'true';
+    } catch {
+      return false;
+    }
+  }, []);
   const [showPreview, setShowPreview] = useState(true);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
@@ -467,7 +480,10 @@ export default function App() {
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
   
-  const [agenda, setAgenda] = useState<AgendaItem[]>(() => {
+  const agendaUndoStackRef = useRef<AgendaItem[][]>([]);
+  const agendaRedoStackRef = useRef<AgendaItem[][]>([]);
+
+  const [agenda, setAgendaState] = useState<AgendaItem[]>(() => {
     const saved = localStorage.getItem('presenta-agenda-v6');
     return saved ? JSON.parse(saved) : [
       { id: '1', label: 'Opening Remarks', duration: 300, color: '#10b981', description: 'Welcome and introduction' },
@@ -475,6 +491,45 @@ export default function App() {
       { id: '3', label: 'Q&A Panel', duration: 900, color: '#f59e0b', description: 'Audience questions' },
     ];
   });
+
+  const setAgenda = useCallback(
+    (updater: React.SetStateAction<AgendaItem[]>, opts?: { record?: boolean }) => {
+      const record = opts?.record !== false;
+      setAgendaState((prev) => {
+        const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
+        if (record) {
+          agendaUndoStackRef.current.push(prev);
+          agendaRedoStackRef.current = [];
+          if (agendaUndoStackRef.current.length > 100) agendaUndoStackRef.current.shift();
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const undoAgenda = useCallback(() => {
+    if (agendaUndoStackRef.current.length === 0) return;
+    setAgendaState((current) => {
+      const prevSnapshot = agendaUndoStackRef.current.pop()!;
+      agendaRedoStackRef.current.push(current);
+      return prevSnapshot;
+    });
+  }, []);
+
+  const redoAgenda = useCallback(() => {
+    if (agendaRedoStackRef.current.length === 0) return;
+    setAgendaState((current) => {
+      const nextSnapshot = agendaRedoStackRef.current.pop()!;
+      agendaUndoStackRef.current.push(current);
+      return nextSnapshot;
+    });
+  }, []);
+
+  const clearAgendaHistory = useCallback(() => {
+    agendaUndoStackRef.current = [];
+    agendaRedoStackRef.current = [];
+  }, []);
 
   const [config, setConfig] = useState<TimerConfig>(() => {
     const saved = localStorage.getItem('presenta-config-v6');
@@ -506,6 +561,15 @@ export default function App() {
     };
   });
 
+  const [showPreferences, setShowPreferences] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+  const [showLicenses, setShowLicenses] = useState(false);
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
+  const [walkthroughStep, setWalkthroughStep] = useState(0);
+  const [showClipboardModal, setShowClipboardModal] = useState(false);
+  const [clipboardJsonText, setClipboardJsonText] = useState('');
+  const [clipboardJsonError, setClipboardJsonError] = useState<string | null>(null);
+
   // --- Refs ---
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -514,6 +578,23 @@ export default function App() {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`
   );
+  const syncStateRef = useRef<{
+    timeLeft: number;
+    isActive: boolean;
+    targetTime: number | null;
+    selectedIndex: number;
+    activeItem: AgendaItem | null;
+    agenda: AgendaItem[];
+    config: TimerConfig;
+  } | null>(null);
+
+  useEffect(() => {
+    const seen = localStorage.getItem(WALKTHROUGH_SEEN_KEY) === 'true';
+    if (!seen) {
+      setWalkthroughStep(0);
+      setShowWalkthrough(true);
+    }
+  }, []);
  
   // --- Display Window Management ---
   const handleOpenDisplay = async (outputIndex?: number | null) => {
@@ -598,11 +679,16 @@ export default function App() {
 
   // --- Effects ---
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('display') === 'true') {
-      setIsDisplayMode(true);
-    }
-  }, []);
+    syncStateRef.current = {
+      timeLeft,
+      isActive,
+      targetTime,
+      selectedIndex,
+      activeItem,
+      agenda,
+      config,
+    };
+  }, [timeLeft, isActive, targetTime, selectedIndex, activeItem, agenda, config]);
 
   useEffect(() => {
     document.title = isDisplayMode ? 'Presenta Pro - Display' : 'Presenta Pro';
@@ -618,21 +704,48 @@ export default function App() {
     const channel = new BroadcastChannel('presenta_pro_v6_sync');
     
     const handleSync = (event: MessageEvent) => {
-      const { type, payload, senderId } = event.data ?? {};
+      const data = (event.data ?? {}) as any as Partial<SyncMessage> & { payload?: any };
+      const senderId = (data as any)?.senderId as string | undefined;
+      const type = (data as any)?.type as SyncMessage['type'] | undefined;
       if (senderId && senderId === syncSenderIdRef.current) return;
       if (type === 'SYNC_STATE') {
+        const payload = (data as any)?.payload ?? {};
+        if (payload?.selectedIndex !== undefined) setSelectedIndex(payload.selectedIndex);
         if (payload.timeLeft !== undefined) setTimeLeft(payload.timeLeft);
         if (payload.isActive !== undefined) setIsActive(payload.isActive);
         if (payload.targetTime !== undefined) setTargetTime(payload.targetTime);
-        if (payload.agenda) setAgenda(payload.agenda);
+        if (payload.agenda) setAgenda(payload.agenda, { record: false });
         if (payload.activeItem !== undefined) setActiveItem(payload.activeItem);
         if (payload.config) setConfig(payload.config);
+      }
+      if (type === 'REQUEST_SYNC') {
+        if (isDisplayMode) return;
+        const snapshot = syncStateRef.current;
+        if (!snapshot) return;
+        channel.postMessage({
+          senderId: syncSenderIdRef.current,
+          type: 'SYNC_STATE',
+          payload: snapshot,
+        } satisfies SyncMessage);
       }
     };
 
     channel.onmessage = handleSync;
     return () => channel.close();
-  }, []);
+  }, [isDisplayMode, setAgenda]);
+
+  useEffect(() => {
+    if (!isDisplayMode) return;
+    const channel = new BroadcastChannel('presenta_pro_v6_sync');
+    channel.postMessage({ senderId: syncSenderIdRef.current, type: 'REQUEST_SYNC' } satisfies SyncMessage);
+    const id = window.setTimeout(() => {
+      channel.postMessage({ senderId: syncSenderIdRef.current, type: 'REQUEST_SYNC' } satisfies SyncMessage);
+    }, 250);
+    return () => {
+      window.clearTimeout(id);
+      channel.close();
+    };
+  }, [isDisplayMode]);
 
   // Optimized Sync
   useEffect(() => {
@@ -725,6 +838,56 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) redoAgenda();
+          else undoAgenda();
+          return;
+        }
+        if (key === 'y') {
+          e.preventDefault();
+          redoAgenda();
+          return;
+        }
+        if (key === 's') {
+          e.preventDefault();
+          void saveAgendaToFile();
+          return;
+        }
+        if (key === 'o') {
+          e.preventDefault();
+          fileInputRef.current?.click();
+          return;
+        }
+        if (key === 'd') {
+          e.preventDefault();
+          handleOpenDisplay();
+          return;
+        }
+        if (key === 'p') {
+          e.preventDefault();
+          setShowPreview((v) => !v);
+          return;
+        }
+        if (key === 'n') {
+          e.preventDefault();
+          addAgendaItem();
+          return;
+        }
+        if (key === ',') {
+          e.preventDefault();
+          setShowPreferences(true);
+          return;
+        }
+        if (key === 'r' && e.shiftKey) {
+          e.preventDefault();
+          refreshApp();
+          return;
+        }
+      }
+
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -745,12 +908,16 @@ export default function App() {
         case 'Enter':
           if (agenda[selectedIndex]) applyAgendaItem(agenda[selectedIndex]);
           break;
+        case 'F11':
+          e.preventDefault();
+          void toggleFullscreen();
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [agenda, selectedIndex]);
+  }, [agenda, selectedIndex, isActive, timeLeft, undoAgenda, redoAgenda]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -804,6 +971,16 @@ export default function App() {
     applyAgendaItem(agenda[nextIndex]);
   };
 
+  const applyPrevAgendaItem = () => {
+    if (agenda.length === 0) return;
+    const currentIndex = activeItem ? agenda.findIndex(a => a.id === activeItem.id) : selectedIndex;
+    const baseIndex = currentIndex >= 0 ? currentIndex : selectedIndex;
+    const prevIndex = Math.max(baseIndex - 1, 0);
+    if (prevIndex === baseIndex) return;
+    setSelectedIndex(prevIndex);
+    applyAgendaItem(agenda[prevIndex]);
+  };
+
   const addAgendaItem = () => {
     setNewAgendaLabel('');
     setNewAgendaMinutesText('5');
@@ -838,8 +1015,9 @@ export default function App() {
     setAgenda(agenda.filter(item => item.id !== id));
   };
 
-  const saveAgendaToFile = () => {
+  const saveAgendaToFile = async () => {
     const data = JSON.stringify(agenda, null, 2);
+
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -857,12 +1035,55 @@ export default function App() {
       try {
         const content = event.target?.result as string;
         const imported = JSON.parse(content);
-        if (Array.isArray(imported)) setAgenda(imported);
+        if (Array.isArray(imported)) {
+          setAgenda(imported, { record: false });
+          clearAgendaHistory();
+        }
       } catch (err) {
         console.error('Failed to load agenda', err);
       }
     };
     reader.readAsText(file);
+  };
+
+  const refreshApp = () => {
+    window.location.reload();
+  };
+
+  const exitApp = () => {
+    window.location.hash = '#/';
+  };
+
+  const openSourceCode = async () => {
+    window.open(SOURCE_CODE_URL, '_blank', 'noopener,noreferrer');
+  };
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const copyTextToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // ignore
+    }
+  };
+
+  const readTextFromClipboard = async () => {
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      return '';
+    }
   };
 
   const handleFeedbackSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -904,41 +1125,513 @@ export default function App() {
   }
 
   const currentTheme = THEMES[config.theme];
+  const canUndo = agendaUndoStackRef.current.length > 0;
+  const canRedo = agendaRedoStackRef.current.length > 0;
 
   return (
     <div className={cn("relative h-screen flex flex-col font-sans overflow-hidden", currentTheme.bg, currentTheme.text, `theme-${config.theme}`)}>
-      <div className={cn("flex h-10 items-center justify-between border-b px-3", currentTheme.navBg, currentTheme.border)}>
-        <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
-          Presenta Pro
-        </div>
-        <div className="flex items-center">
-          <button
-            type="button"
-            className={cn("grid h-9 w-10 place-items-center rounded-md transition-colors", "hover:bg-white/10")}
-            aria-label="Minimize"
-            title="Minimize"
-          >
-            <Minus size={16} />
-          </button>
-          <button
-            type="button"
-            className={cn("grid h-9 w-10 place-items-center rounded-md transition-colors", "hover:bg-white/10")}
-            aria-label="Maximize"
-            title="Maximize"
-          >
-            <Square size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={handleCloseToHome}
-            className={cn("grid h-9 w-10 place-items-center rounded-md transition-colors", "hover:bg-red-500/80 hover:text-white")}
-            aria-label="Close"
-            title="Close"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      </div>
+      {null}
+
+      {/* Walkthrough Modal */}
+      <AnimatePresence>
+        {showWalkthrough ? (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowWalkthrough(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 12 }}
+              className={cn("relative w-full max-w-2xl overflow-hidden rounded-3xl border p-6 shadow-2xl", currentTheme.bg, currentTheme.border)}
+            >
+              <div className="absolute top-0 left-0 h-1 w-full bg-emerald-500" />
+
+              {(() => {
+                const steps = [
+                  {
+                    title: 'Welcome to Presenta Pro',
+                    body: 'This quick walkthrough shows you the main workflow: set an agenda, run the timer, and send a clean display to a monitor.',
+                    icon: <LayoutDashboard size={20} />,
+                  },
+                  {
+                    title: 'Agenda + Timer',
+                    body: 'Use the left Agenda panel to add segments. Select an item and press ENTER to load it into the timer. SPACE starts/pauses.',
+                    icon: <Timer size={20} />,
+                  },
+                  {
+                    title: 'Display Mode (Stage Monitor)',
+                    body: 'Use View → Send to Monitor to open the full-screen display window on your external monitor (HDMI/VGA).',
+                    icon: <MonitorPlay size={20} />,
+                  },
+                  {
+                    title: 'Files (Export / Import)',
+                    body: 'Your agenda and settings are stored locally in your browser. Use File → Save Agenda (JSON) and File → Load Agenda (JSON) to back up or move between devices.',
+                    icon: <Save size={20} />,
+                  },
+                ];
+
+                const clamped = Math.max(0, Math.min(walkthroughStep, steps.length - 1));
+                const step = steps[clamped];
+                const isLast = clamped === steps.length - 1;
+
+                return (
+                  <div>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5 text-emerald-400">
+                          {step.icon}
+                        </div>
+                        <div>
+                          <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                            Walkthrough {clamped + 1} / {steps.length}
+                          </div>
+                          <div className="mt-2 text-xl font-black tracking-tight">{step.title}</div>
+                          <div className={cn("mt-2 text-[12px] font-semibold leading-relaxed", currentTheme.muted)}>{step.body}</div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowWalkthrough(false)}
+                        className={cn("grid h-10 w-10 place-items-center rounded-2xl border transition-colors", currentTheme.border, "hover:bg-white/10")}
+                        aria-label="Close walkthrough"
+                        title="Close"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.setItem(WALKTHROUGH_SEEN_KEY, 'true');
+                          setShowWalkthrough(false);
+                        }}
+                        className={cn("px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                      >
+                        Skip
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={clamped === 0}
+                          onClick={() => setWalkthroughStep((s) => Math.max(0, s - 1))}
+                          className={cn(
+                            "px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-opacity",
+                            currentTheme.border,
+                            clamped === 0 ? "opacity-50 cursor-not-allowed" : "hover:opacity-80",
+                            currentTheme.muted
+                          )}
+                        >
+                          Back
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isLast) setWalkthroughStep((s) => s + 1);
+                            else {
+                              localStorage.setItem(WALKTHROUGH_SEEN_KEY, 'true');
+                              setShowWalkthrough(false);
+                            }
+                          }}
+                          className="px-5 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest bg-emerald-500 text-black hover:opacity-90"
+                        >
+                          {isLast ? 'Finish' : 'Next'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Preferences Modal */}
+      <AnimatePresence>
+        {showPreferences ? (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPreferences(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 12 }}
+              className={cn("relative w-full max-w-2xl overflow-hidden rounded-3xl border p-6 shadow-2xl", currentTheme.bg, currentTheme.border)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                    Preferences
+                  </div>
+                  <div className="mt-2 text-xl font-black tracking-tight">Personalize your workspace.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPreferences(false)}
+                  className={cn("grid h-10 w-10 place-items-center rounded-2xl border transition-colors", currentTheme.border, "hover:bg-white/10")}
+                  aria-label="Close preferences"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div className={cn("rounded-2xl border p-4", currentTheme.border)}>
+                  <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                    Theme
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {(['dark', 'light', 'matrix', 'cyberpunk', 'minimal'] as ThemeMode[]).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setConfig({ ...config, theme: t })}
+                        className={cn(
+                          "px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all",
+                          config.theme === t
+                            ? "bg-emerald-500 text-black border-emerald-500"
+                            : cn(currentTheme.subtleBg, currentTheme.border, currentTheme.muted, "hover:border-emerald-500/30")
+                        )}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={cn("rounded-2xl border p-4", currentTheme.border)}>
+                  <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                    Font
+                  </div>
+                  <div className="mt-3 relative">
+                    <select
+                      className={cn(
+                        "w-full border rounded-xl px-3 py-3 text-sm font-bold focus:ring-1 focus:ring-emerald-500 outline-none appearance-none cursor-pointer pr-10",
+                        currentTheme.inputBg,
+                        currentTheme.border,
+                        currentTheme.text
+                      )}
+                      value={config.fontFamily}
+                      onChange={(e) => setConfig({ ...config, fontFamily: e.target.value as FontStyle })}
+                    >
+                      <option value="font-sans">Poppins (Sans)</option>
+                      <option value="font-display">Montserrat (Display)</option>
+                      <option value="font-digital">Orbitron (Digital)</option>
+                      <option value="font-classic">Libre Baskerville (Classic)</option>
+                      <option value="font-mono">JetBrains Mono (Mono)</option>
+                      <option value="font-impact">Bebas Neue (Impact)</option>
+                      <option value="font-retro">Righteous (Retro)</option>
+                      <option value="font-heavy">Anton (Heavy)</option>
+                      <option value="font-clean">Outfit (Clean)</option>
+                      <option value="font-elegant">Playfair Display (Elegant)</option>
+                    </select>
+                    <ChevronRight size={14} className={cn("absolute right-3 top-1/2 -translate-y-1/2 rotate-90 pointer-events-none", currentTheme.muted)} />
+                  </div>
+                </div>
+
+                <div className={cn("rounded-2xl border p-4 md:col-span-2", currentTheme.border)}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                        Data
+                      </div>
+                      <div className={cn("mt-2 text-[12px] font-semibold", currentTheme.muted)}>
+                        Stored locally in your browser.
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.removeItem(WALKTHROUGH_SEEN_KEY);
+                          setWalkthroughStep(0);
+                          setShowWalkthrough(true);
+                        }}
+                        className={cn("px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                      >
+                        Show Walkthrough
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* About Modal */}
+      <AnimatePresence>
+        {showAbout ? (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAbout(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 12 }}
+              className={cn("relative w-full max-w-xl overflow-hidden rounded-3xl border p-6 shadow-2xl", currentTheme.bg, currentTheme.border)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                    About
+                  </div>
+                  <div className="mt-2 text-xl font-black tracking-tight">Presenta Pro</div>
+                  <div className={cn("mt-2 text-[12px] font-semibold", currentTheme.muted)}>
+                    Version {__APP_VERSION__} • Web
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAbout(false)}
+                  className={cn("grid h-10 w-10 place-items-center rounded-2xl border transition-colors", currentTheme.border, "hover:bg-white/10")}
+                  aria-label="Close about"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3">
+                <div className={cn("rounded-2xl border p-4", currentTheme.border)}>
+                  <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                    Quick links
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowWalkthrough(true);
+                        setWalkthroughStep(0);
+                      }}
+                      className={cn("px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                    >
+                      Welcome
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowFeedback(true)}
+                      className={cn("px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                    >
+                      Feedback
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void openSourceCode()}
+                      className="px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest bg-emerald-500 text-black hover:opacity-90"
+                    >
+                      Source code
+                    </button>
+                  </div>
+                </div>
+
+                <div className={cn("rounded-2xl border p-4", currentTheme.border)}>
+                  <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                    Version
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <div className="text-[12px] font-semibold select-all">{__APP_VERSION__}</div>
+                    <button
+                      type="button"
+                      onClick={() => void copyTextToClipboard(__APP_VERSION__)}
+                      className={cn("px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Licenses Modal */}
+      <AnimatePresence>
+        {showLicenses ? (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowLicenses(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 12 }}
+              className={cn("relative w-full max-w-xl overflow-hidden rounded-3xl border p-6 shadow-2xl", currentTheme.bg, currentTheme.border)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                    Licenses
+                  </div>
+                  <div className="mt-2 text-xl font-black tracking-tight">Open-source notices</div>
+                  <div className={cn("mt-2 text-[12px] font-semibold leading-relaxed", currentTheme.muted)}>
+                    This build doesn’t bundle a local LICENSE file in the repo. For licensing details, open the source repository and review its license and dependency licenses.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLicenses(false)}
+                  className={cn("grid h-10 w-10 place-items-center rounded-2xl border transition-colors", currentTheme.border, "hover:bg-white/10")}
+                  aria-label="Close licenses"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => void openSourceCode()}
+                  className="px-5 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest bg-emerald-500 text-black hover:opacity-90"
+                >
+                  Open Source Repo
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Clipboard Modal */}
+      <AnimatePresence>
+        {showClipboardModal ? (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowClipboardModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 12 }}
+              className={cn("relative w-full max-w-3xl overflow-hidden rounded-3xl border p-6 shadow-2xl", currentTheme.bg, currentTheme.border)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className={cn("text-[10px] font-black uppercase tracking-[0.22em]", currentTheme.muted)}>
+                    Clipboard
+                  </div>
+                  <div className="mt-2 text-xl font-black tracking-tight">Copy / paste agenda JSON</div>
+                  <div className={cn("mt-2 text-[12px] font-semibold leading-relaxed", currentTheme.muted)}>
+                    Paste a JSON array of agenda items to import. This replaces the current agenda.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowClipboardModal(false)}
+                  className={cn("grid h-10 w-10 place-items-center rounded-2xl border transition-colors", currentTheme.border, "hover:bg-white/10")}
+                  aria-label="Close clipboard modal"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <textarea
+                  value={clipboardJsonText}
+                  onChange={(e) => {
+                    setClipboardJsonText(e.target.value);
+                    setClipboardJsonError(null);
+                  }}
+                  className={cn("w-full h-56 rounded-2xl border px-4 py-3 text-[12px] font-semibold font-mono outline-none focus:ring-2 focus:ring-emerald-500/40", currentTheme.inputBg, currentTheme.border, currentTheme.text)}
+                  placeholder='[{"id":"1","label":"Opening","duration":300,"color":"#10b981"}]'
+                />
+                {clipboardJsonError ? (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[12px] font-semibold text-red-100">
+                    {clipboardJsonError}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const text = await readTextFromClipboard();
+                      if (text) setClipboardJsonText(text);
+                      setClipboardJsonError(null);
+                    }}
+                    className={cn("px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                  >
+                    Paste
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copyTextToClipboard(clipboardJsonText)}
+                    className={cn("px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                  >
+                    Copy
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowClipboardModal(false)}
+                    className={cn("px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border", currentTheme.border, currentTheme.muted, "hover:opacity-80")}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClipboardJsonError(null);
+                      try {
+                        const parsed = JSON.parse(clipboardJsonText);
+                        if (!Array.isArray(parsed)) {
+                          throw new Error('Invalid JSON: expected an array of agenda items.');
+                        }
+                        setAgenda(parsed, { record: false });
+                        clearAgendaHistory();
+                        setShowClipboardModal(false);
+                      } catch (err: any) {
+                        setClipboardJsonError(err?.message ? String(err.message) : 'Invalid JSON.');
+                      }
+                    }}
+                    className="px-5 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest bg-emerald-500 text-black hover:opacity-90"
+                  >
+                    Import
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
       {/* Add Agenda Item Modal */}
       <AnimatePresence>
         {showAddAgendaModal && (
@@ -1211,13 +1904,19 @@ export default function App() {
 
       {/* Top Navigation */}
       <nav className={cn("h-12 border-b flex items-center px-4 gap-6 backdrop-blur-md z-50", currentTheme.navBg, currentTheme.border)}>
-        <a href="#/" title="Back to landing page" className="flex items-center gap-3 no-underline">
+        <a href="#/" title="Home" className="flex items-center gap-3 no-underline">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20 shadow-lg shadow-emerald-500/15">
             <img
-              src="/android-chrome-192x192.png"
+              src={`${String((import.meta as any)?.env?.BASE_URL ?? '/').replace(/\/?$/, '/')}android-chrome-192x192.png`}
               alt="Presenta Pro"
-              className="w-4.5 h-4.5 logo-emerald logo-float"
+              className="w-4 h-4 logo-emerald logo-float"
               draggable={false}
+              onError={(e) => {
+                const el = e.currentTarget;
+                const base = String((import.meta as any)?.env?.BASE_URL ?? '/').replace(/\/?$/, '/');
+                el.onerror = null;
+                el.src = `${base}favicon-32x32.png`;
+              }}
             />
           </div>
           <span className={cn("font-display font-black tracking-tighter text-lg", currentTheme.text)}>
@@ -1230,7 +1929,7 @@ export default function App() {
               { label: 'File', icon: <FileText size={14} /> },
               { label: 'Edit', icon: <Edit3 size={14} /> },
               { label: 'View', icon: <Layers size={14} /> },
-              { label: 'Settings', icon: <Settings2 size={14} /> }
+              { label: 'Help', icon: <MessageCircle size={14} /> },
             ].map(menu => (
               <div key={menu.label} className="relative">
                 <button
@@ -1255,37 +1954,155 @@ export default function App() {
                   )}>
                     {menu.label === 'File' && (
                       <>
-                        <button onClick={() => { saveAgendaToFile(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                        <button onClick={() => { void saveAgendaToFile(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
                           <div className="flex items-center gap-3">
                             <Save size={16} className="text-blue-400" /> 
                             <span className={currentTheme.text}>Save Agenda</span>
                           </div>
-                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>⌘S</span>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+S</span>
                         </button>
                         <button onClick={() => { fileInputRef.current?.click(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
                           <div className="flex items-center gap-3">
                             <Upload size={16} className="text-emerald-400" /> 
                             <span className={currentTheme.text}>Load Agenda</span>
                           </div>
-                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>⌘O</span>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+O</span>
+                        </button>
+
+                        <div className={cn("my-1 h-px", currentTheme.border)} />
+
+                        <button
+                          disabled={!canUndo}
+                          onClick={() => {
+                            undoAgenda();
+                            setActiveMenu(null);
+                          }}
+                          className={cn(
+                            "w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors",
+                            !canUndo ? "opacity-50 cursor-not-allowed" : "hover:bg-emerald-500/10"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <ArrowLeft size={16} className="text-slate-400" />
+                            <span className={currentTheme.text}>Undo</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+Z</span>
+                        </button>
+                        <button
+                          disabled={!canRedo}
+                          onClick={() => {
+                            redoAgenda();
+                            setActiveMenu(null);
+                          }}
+                          className={cn(
+                            "w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors",
+                            !canRedo ? "opacity-50 cursor-not-allowed" : "hover:bg-emerald-500/10"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <ChevronRight size={16} className="text-slate-400" />
+                            <span className={currentTheme.text}>Redo</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+Y</span>
+                        </button>
+
+                        <div className={cn("my-1 h-px", currentTheme.border)} />
+
+                        <button
+                          onClick={() => {
+                            setClipboardJsonText(JSON.stringify(agenda, null, 2));
+                            setShowClipboardModal(true);
+                            setActiveMenu(null);
+                          }}
+                          className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Command size={16} className="text-slate-400" />
+                            <span className={currentTheme.text}>Agenda Clipboard…</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>JSON</span>
+                        </button>
+
+                        <div className={cn("my-1 h-px", currentTheme.border)} />
+
+                        <button
+                          onClick={() => {
+                            setShowPreferences(true);
+                            setActiveMenu(null);
+                          }}
+                          className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Settings2 size={16} className="text-slate-400" />
+                            <span className={currentTheme.text}>Preferences…</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+,</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            exitApp();
+                            setActiveMenu(null);
+                          }}
+                          className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-red-500/10")}
+                        >
+                          <div className="flex items-center gap-3">
+                            <X size={16} className="text-red-400" />
+                            <span className={currentTheme.text}>Home</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>#/</span>
                         </button>
                       </>
                     )}
                     {menu.label === 'Edit' && (
                       <>
-                        <button onClick={() => { addAgendaItem(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                        <button
+                          disabled={!canUndo}
+                          onClick={() => {
+                            undoAgenda();
+                            setActiveMenu(null);
+                          }}
+                          className={cn(
+                            "w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors",
+                            !canUndo ? "opacity-50 cursor-not-allowed" : "hover:bg-emerald-500/10"
+                          )}
+                        >
                           <div className="flex items-center gap-3">
-                            <Plus size={16} className="text-blue-400" /> 
-                            <span className={currentTheme.text}>Add Item</span>
+                            <ArrowLeft size={16} className="text-slate-400" /> 
+                            <span className={currentTheme.text}>Undo</span>
                           </div>
-                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>⌘N</span>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+Z</span>
                         </button>
-                        <button onClick={() => { handleReset(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                        <button
+                          disabled={!canRedo}
+                          onClick={() => {
+                            redoAgenda();
+                            setActiveMenu(null);
+                          }}
+                          className={cn(
+                            "w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors",
+                            !canRedo ? "opacity-50 cursor-not-allowed" : "hover:bg-emerald-500/10"
+                          )}
+                        >
                           <div className="flex items-center gap-3">
-                            <RotateCcw size={16} className="text-red-400" /> 
-                            <span className={currentTheme.text}>Reset Timer</span>
+                            <ChevronRight size={16} className="text-slate-400" /> 
+                            <span className={currentTheme.text}>Redo</span>
                           </div>
-                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>R</span>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+Y</span>
+                        </button>
+                        <div className={cn("my-1 h-px", currentTheme.border)} />
+                        <button
+                          onClick={() => {
+                            setClipboardJsonText(JSON.stringify(agenda, null, 2));
+                            setShowClipboardModal(true);
+                            setActiveMenu(null);
+                          }}
+                          className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Command size={16} className="text-slate-400" /> 
+                            <span className={currentTheme.text}>Copy/Paste Agenda JSON…</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>JSON</span>
                         </button>
                       </>
                     )}
@@ -1296,67 +2113,69 @@ export default function App() {
                             {showPreview ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-blue-400" />} 
                             <span className={currentTheme.text}>{showPreview ? 'Hide' : 'Show'} Preview</span>
                           </div>
-                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>⌘P</span>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+P</span>
+                        </button>
+                        <button onClick={() => { void toggleFullscreen(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                          <div className="flex items-center gap-3">
+                            <Maximize2 size={16} className="text-slate-400" /> 
+                            <span className={currentTheme.text}>Toggle Fullscreen</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>F11</span>
                         </button>
                         <button onClick={() => { handleOpenDisplay(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
                           <div className="flex items-center gap-3 font-bold text-emerald-500">
                             <MonitorPlay size={16} /> 
                             <span>Send to Monitor</span>
                           </div>
-                          <span className="text-[10px] text-emerald-500/50 group-hover:text-emerald-500 font-mono">⌘D</span>
+                          <span className="text-[10px] text-emerald-500/50 group-hover:text-emerald-500 font-mono">Ctrl+D</span>
+                        </button>
+                        <button onClick={() => { refreshApp(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                          <div className="flex items-center gap-3">
+                            <RefreshCw size={16} className="text-slate-400" /> 
+                            <span className={currentTheme.text}>Refresh App</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Ctrl+Shift+R</span>
                         </button>
                       </>
                     )}
-                    {menu.label === 'Settings' && (
-                      <div className="px-4 py-3 space-y-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.muted)}>Display Theme</label>
-                            <Palette size={10} className={currentTheme.muted} />
+                    {menu.label === 'Help' && (
+                      <>
+                        <button onClick={() => { setShowWalkthrough(true); setWalkthroughStep(0); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                          <div className="flex items-center gap-3">
+                            <MonitorPlay size={16} className="text-emerald-400" /> 
+                            <span className={currentTheme.text}>Welcome / Walkthrough</span>
                           </div>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            {(['dark', 'light', 'matrix', 'cyberpunk', 'minimal'] as ThemeMode[]).map(t => (
-                              <button
-                                key={t}
-                                onClick={() => setConfig({ ...config, theme: t })}
-                                className={cn(
-                                  "px-2 py-1.5 rounded-lg text-[10px] font-bold capitalize border transition-all",
-                                  config.theme === t 
-                                    ? "bg-emerald-500 text-black border-emerald-500 shadow-lg" 
-                                    : cn(currentTheme.subtleBg, currentTheme.border, currentTheme.muted, "hover:border-emerald-500/30")
-                                )}
-                              >
-                                {t}
-                              </button>
-                            ))}
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Guide</span>
+                        </button>
+                        <button onClick={() => { setShowAbout(true); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                          <div className="flex items-center gap-3">
+                            <Shield size={16} className="text-slate-400" /> 
+                            <span className={currentTheme.text}>About</span>
                           </div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className={cn("text-[10px] font-black uppercase tracking-widest", currentTheme.muted)}>Global Font</label>
-                            <Type size={10} className={currentTheme.muted} />
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>{__APP_VERSION__}</span>
+                        </button>
+                        <button onClick={() => { setShowFeedback(true); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                          <div className="flex items-center gap-3">
+                            <MessageSquare size={16} className="text-blue-400" /> 
+                            <span className={currentTheme.text}>Submit Feedback</span>
                           </div>
-                          <div className="relative">
-                            <select 
-                              className={cn("w-full border rounded-lg px-2 py-1.5 text-xs focus:ring-1 focus:ring-emerald-500 outline-none appearance-none cursor-pointer pr-8", currentTheme.inputBg, currentTheme.border, currentTheme.text)}
-                              value={config.fontFamily}
-                              onChange={(e) => setConfig({ ...config, fontFamily: e.target.value as FontStyle })}
-                            >
-                              <option value="font-sans">Poppins (Sans)</option>
-                              <option value="font-display">Montserrat (Display)</option>
-                              <option value="font-digital">Orbitron (Digital)</option>
-                              <option value="font-classic">Libre Baskerville (Classic)</option>
-                              <option value="font-mono">JetBrains Mono (Mono)</option>
-                              <option value="font-impact">Bebas Neue (Impact)</option>
-                              <option value="font-retro">Righteous (Retro)</option>
-                              <option value="font-heavy">Anton (Heavy)</option>
-                              <option value="font-clean">Outfit (Clean)</option>
-                              <option value="font-elegant">Playfair Display (Elegant)</option>
-                            </select>
-                            <ChevronRight size={12} className={cn("absolute right-2 top-1/2 -translate-y-1/2 rotate-90 pointer-events-none", currentTheme.muted)} />
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Form</span>
+                        </button>
+                        <button onClick={() => { void openSourceCode(); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                          <div className="flex items-center gap-3">
+                            <Github size={16} className="text-emerald-400" /> 
+                            <span className={currentTheme.text}>Source Code</span>
                           </div>
-                        </div>
-                      </div>
+                          <ExternalLink size={14} className={currentTheme.muted} />
+                        </button>
+                        <button onClick={() => { setShowLicenses(true); setActiveMenu(null); }} className={cn("w-full px-4 py-2.5 text-left text-sm flex items-center justify-between group transition-colors", "hover:bg-emerald-500/10")}>
+                          <div className="flex items-center gap-3">
+                            <FileText size={16} className="text-slate-400" /> 
+                            <span className={currentTheme.text}>View Licenses</span>
+                          </div>
+                          <span className={cn("text-[10px] font-mono", currentTheme.muted)}>Info</span>
+                        </button>
+                      </>
                     )}
                   </div>
                 )}
@@ -1364,24 +2183,6 @@ export default function App() {
             ))}
           </div>
 
-        <div className="ml-auto flex items-center gap-6">
-          <a 
-            href={SOURCE_CODE_URL}
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-500 hover:text-emerald-400 transition-colors group"
-          >
-            <Github size={14} />
-            <span>Source Code</span>
-          </a>
-          <button 
-            onClick={() => setShowFeedback(true)}
-            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-blue-400 hover:text-blue-300 transition-colors group"
-          >
-            <MessageCircle size={14} />
-            <span>Submit Feedback</span>
-          </button>
-        </div>
         <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={loadAgendaFromFile} />
       </nav>
 

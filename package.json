@@ -1,17 +1,19 @@
 {
-  "name": "presenta-pro",
+  "name": "Presenta-Pro",
   "private": true,
   "version": "1.0.1",
   "type": "module",
-  "productName": "Presenta Pro",
-  "author": "Techie 4 Christ",
+  "productName": "Presenta",
+  "author": "Alex-Techie 4 Christ",
   "scripts": {
     "dev": "vite --port=3000 --host",
     "build": "vite build",
     "build:pages": "vite build --base=./ --outDir dist-pages",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "remote:dev": "tsx remote/remote-server.ts",
+    "helper:dev": "tsx remote/remote-server.ts"
   },
   "dependencies": {
     "@fontsource/anton": "^5.2.7",
@@ -32,13 +34,15 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-resizable-panels": "^2.0.23",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
