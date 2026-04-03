@@ -6,6 +6,15 @@ export type ReleaseNote = {
 
 export const RELEASES: ReleaseNote[] = [
   {
+    version: '1.1.2',
+    date: '2026-04-03',
+    highlights: [
+      'Updated the website installer download to the 1.1.2 Windows MSI.',
+      'Aligned landing page version labels with the current desktop release.',
+      'Minor UI polish and cleanup.',
+    ],
+  },
+  {
     version: '1.0.1',
     date: '2026-03-24',
     highlights: [
@@ -24,4 +33,3 @@ export const RELEASES: ReleaseNote[] = [
     ],
   },
 ];
-

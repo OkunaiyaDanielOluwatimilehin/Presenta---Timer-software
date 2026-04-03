@@ -26,7 +26,7 @@ import {
 import { motion } from 'motion/react';
 import { RELEASES } from './releases';
 
-const DEFAULT_DOWNLOAD_PATH = 'download/PresentaProInstaller.msi';
+const DEFAULT_DOWNLOAD_PATH = 'download/Presenta_1.1.2_x64_en-US.msi';
 const HERO_TITLE = 'PRESENTA PRO';
 const HERO_HEADLINE = 'STAGE TIMING THAT LOOKS PRO.';
 const DEFAULT_FORMSPREE_ENDPOINT = 'https://formspree.io/f/mnjgzdbv';
@@ -63,6 +63,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
   }, []);
 
   const resolvedDownloadUrl = downloadUrl ?? assetUrl(DEFAULT_DOWNLOAD_PATH);
+  const currentVersion = RELEASES[0]?.version ?? (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.x');
   const formspreeEndpoint =
     (import.meta as any)?.env?.VITE_FORMSPREE_ENDPOINT ?? DEFAULT_FORMSPREE_ENDPOINT;
   const downloadFormspreeEndpoint =
@@ -485,7 +486,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <svg
               aria-hidden="true"
-              className="absolute left-1/2 top-[-120px] h-[520px] w-[980px] -translate-x-1/2 opacity-[0.22]"
+              className="absolute left-1/2 -top-30 h-130 w-245 -translate-x-1/2 opacity-[0.22]"
               viewBox="0 0 980 520"
               fill="none"
             >
@@ -509,13 +510,13 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                 opacity="0.12"
               />
             </svg>
-            <div className="absolute left-[-24%] top-[-28%] h-[520px] w-[520px] rounded-full bg-emerald-500/20 blur-3xl" />
-            <div className="absolute right-[-22%] top-[-26%] h-[520px] w-[520px] rounded-full bg-cyan-400/16 blur-3xl" />
-            <div className="absolute left-[38%] top-[65%] h-[560px] w-[560px] rounded-full bg-fuchsia-500/10 blur-3xl" />
+            <div className="absolute left-[-24%] top-[-28%] h-130 w-130 rounded-full bg-emerald-500/20 blur-3xl" />
+            <div className="absolute right-[-22%] top-[-26%] h-130 w-130 rounded-full bg-cyan-400/16 blur-3xl" />
+            <div className="absolute left-[38%] top-[65%] h-140 w-140 rounded-full bg-fuchsia-500/10 blur-3xl" />
           </div>
 
           <div className="mx-auto max-w-7xl px-4 py-14 md:py-20">
-            <div className="grid gap-10 md:min-h-[920px] md:grid-rows-[0.4fr_0.6fr]">
+            <div className="grid gap-10 md:min-h-230 md:grid-rows-[0.4fr_0.6fr]">
               <motion.div
                 className="mx-auto flex max-w-3xl flex-col items-center justify-center text-center"
               >
@@ -539,7 +540,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                 </motion.h1>
 
                 <motion.div
-                  className="mt-3 text-balance text-base font-black uppercase tracking-[0.10em] text-white/85 md:text-lg"
+                  className="mt-3 text-balance text-base font-black uppercase tracking-widest text-white/85 md:text-lg"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.55, ease: 'easeOut', delay: 0.06 }}
@@ -549,7 +550,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                   </span>
                   <span
                     aria-hidden="true"
-                    className="ml-1 inline-block translate-y-[1px] font-black text-white/80 animate-[pp_blink_1s_steps(1)_infinite]"
+                    className="ml-1 inline-block translate-y-px font-black text-white/80 animate-[pp_blink_1s_steps(1)_infinite]"
                   >
                     ▏
                   </span>
@@ -788,7 +789,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                   data-feature-card
                   className={cn(
                     "snap-start",
-                    "min-w-[min(86vw,420px)] md:min-w-[420px]",
+                    "min-w-[min(86vw,420px)] md:min-w-105",
                     "group relative overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-4 shadow-[0_0_0_1px_rgba(0,0,0,0.10)_inset]"
                   )}
                   whileHover={{ y: -2 }}
@@ -894,7 +895,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">Latest</div>
                     <div className="mt-2 text-lg font-black tracking-tight text-white/90">
-                      v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : RELEASES[0]?.version ?? '1.x'}
+                      v{currentVersion}
                     </div>
                     <div className="mt-2 text-[12px] font-semibold leading-relaxed text-white/55">
                       Windows installer is an .msi. The web app also runs directly in your browser.
@@ -1031,7 +1032,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
         </div>
       </footer>
 
-      <div className="fixed bottom-5 right-5 z-[70] flex flex-col gap-2">
+      <div className="fixed bottom-5 right-5 z-70 flex flex-col gap-2">
         <button
           type="button"
           onClick={() => {
@@ -1058,7 +1059,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
       </div>
 
       {showFeedback ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-80 flex items-center justify-center p-4">
           <button
             type="button"
             className="absolute inset-0 bg-black/75 backdrop-blur-sm"
@@ -1149,7 +1150,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
       ) : null}
 
       {showDownloadGate ? (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-90 flex items-center justify-center p-4">
           <button
             type="button"
             className="absolute inset-0 bg-black/75 backdrop-blur-sm"
@@ -1186,7 +1187,7 @@ export default function Landing({ onOpenApp, downloadUrl }: Props) {
                   Windows 10/11 (64-bit) • .msi
                 </div>
                 <div className="text-[11px] font-black uppercase tracking-[0.22em] text-white/55">
-                  v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.x'}
+                  v{currentVersion}
                 </div>
               </div>
               <div className="mt-2 text-[11px] font-semibold leading-relaxed text-white/50 break-all">
