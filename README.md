@@ -16,16 +16,27 @@ Source code: https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-so
 
 ---
 
-Download (Windows)
+Run Locally
 
-Download and install the latest `.msi` from the GitHub Releases page:
-https://github.com/OkunaiyaDanielOluwatimilehin/Presenta---Timer-software/releases/tag/Software
+```bash
+npm install
+npm run dev
+```
 
----
+Build:
 
-App Icon (Windows)
+```bash
+npm run build
+```
 
-Run `npm run tauri:icon` to generate the Windows app icons in `src-tauri/icons/` from `public/android-chrome-512x512.png`.
+Open the web app from the landing page, or go directly to `/#/app`.
+
+Website (Landing Page)
+
+The landing page is part of the React app (hero, features, FAQ, footer). It includes:
+
+- **Download (.msi)** button (GitHub Releases “latest” by default)
+- **Open web app** button (opens the timer app route)
 
 ---
 
@@ -44,7 +55,6 @@ Tech Stack
 
 - **Framework**: React + Vite
 - **Styling**: Tailwind CSS
-- **Desktop**: Tauri (Windows installer via `.msi`)
 - **Icons**: Lucide React
 - **Fonts**: Fontsource (offline-ready)
 
